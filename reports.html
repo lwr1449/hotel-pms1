@@ -36,6 +36,30 @@
             background-color: #3b82f6;
             color: white;
         }
+        
+        /* 加载状态样式 */
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+            color: #6b7280;
+        }
+        
+        .loading-spinner {
+            border: 3px solid #e5e7eb;
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+            margin-right: 0.5rem;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
@@ -192,12 +216,22 @@
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
                 <div class="bg-white rounded-xl shadow-sm p-6">
                     <h3 class="text-lg font-semibold text-gray-900 mb-4">收入趋势</h3>
-                    <div id="revenueChart" style="height: 300px;"></div>
+                    <div id="revenueChart" style="height: 300px;">
+                        <div class="loading">
+                            <div class="loading-spinner"></div>
+                            <span>加载收入趋势数据中...</span>
+                        </div>
+                    </div>
                 </div>
                 
                 <div class="bg-white rounded-xl shadow-sm p-6">
                     <h3 class="text-lg font-semibold text-gray-900 mb-4">房型收入分布</h3>
-                    <div id="roomTypeRevenueChart" style="height: 300px;"></div>
+                    <div id="roomTypeRevenueChart" style="height: 300px;">
+                        <div class="loading">
+                            <div class="loading-spinner"></div>
+                            <span>加载房型收入数据中...</span>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -222,7 +256,14 @@
                                 </tr>
                             </thead>
                             <tbody id="revenueTable" class="bg-white divide-y divide-gray-200">
-                                <!-- 收入记录将在这里生成 -->
+                                <tr>
+                                    <td colspan="7" class="px-6 py-8 text-center text-gray-500">
+                                        <div class="loading">
+                                            <div class="loading-spinner"></div>
+                                            <span>加载详细收入记录中...</span>
+                                        </div>
+                                    </td>
+                                </tr>
                             </tbody>
                         </table>
                     </div>
@@ -233,8 +274,8 @@
                         </div>
                         
                         <div class="flex space-x-2">
-                            <button onclick="previousPage()" class="px-3 py-1 border border-gray-300 rounded text-sm hover:bg-gray-50" id="prevBtn">上一页</button>
-                            <button onclick="nextPage()" class="px-3 py-1 border border-gray-300 rounded text-sm hover:bg-gray-50" id="nextBtn">下一页</button>
+                            <button onclick="previousPage()" class="px-3 py-1 border border-gray-300 rounded text-sm hover:bg-gray-50" id="prevBtn" disabled>上一页</button>
+                            <button onclick="nextPage()" class="px-3 py-1 border border-gray-300 rounded text-sm hover:bg-gray-50" id="nextBtn" disabled>下一页</button>
                         </div>
                     </div>
                 </div>
@@ -242,48 +283,107 @@
         </div>
     </div>
 
-    <script src="main.js"></script>
     <script>
+        // ===================== 全局配置 =====================
+        // LeanCloud 初始化（替换为你的实际配置）
+        AV.init({
+            appId: "YOUR_LEANCLOUD_APP_ID",
+            appKey: "YOUR_LEANCLOUD_APP_KEY",
+            serverURL: "https://your-server-url.api.lncldglobal.com"
+        });
+
+        // 全局变量
         let currentPeriod = 'today';
         let currentPage = 1;
         const pageSize = 10;
-        
-        // 页面初始化
+        let allRevenueRecords = []; // 存储所有收入记录
+        let revenueChartInstance = null; // 收入趋势图表实例
+        let roomTypeChartInstance = null; // 房型收入图表实例
+
+        // ===================== 页面初始化 =====================
         document.addEventListener('DOMContentLoaded', async function() {
+            // 初始化实时时间显示
+            updateCurrentTime();
+            setInterval(updateCurrentTime, 1000);
+            
+            // 初始化图表实例
+            initCharts();
+            
+            // 加载报表数据
             await initializeReportsPage();
+            
+            // 响应窗口大小变化，自适应图表
+            window.addEventListener('resize', function() {
+                if (revenueChartInstance) revenueChartInstance.resize();
+                if (roomTypeChartInstance) roomTypeChartInstance.resize();
+            });
         });
-        
+
+        // ===================== 核心功能函数 =====================
+        /**
+         * 初始化报表页面，加载所有数据
+         */
         async function initializeReportsPage() {
-            await loadFinancialData();
-            await loadRevenueChart();
-            await loadRoomTypeRevenueChart();
-            await loadRevenueTable();
+            try {
+                // 并行加载各类数据，提升性能
+                await Promise.all([
+                    loadFinancialData(),
+                    loadRevenueChart(),
+                    loadRoomTypeRevenueChart(),
+                    loadRevenueTable()
+                ]);
+            } catch (error) {
+                console.error('初始化报表页面失败:', error);
+                showErrorNotification('数据加载失败，请刷新页面重试');
+            }
         }
-        
+
+        /**
+         * 加载核心财务数据（总收入、押金、订单数、平均房价）
+         */
         async function loadFinancialData() {
             try {
                 const data = await getFinancialData(currentPeriod);
                 
-                document.getElementById('roomRevenue').textContent = `¥${data.roomRevenue.toLocaleString()}`;
-                document.getElementById('depositTotal').textContent = `¥${data.depositTotal.toLocaleString()}`;
+                // 格式化数字显示（千分位分隔）
+                document.getElementById('roomRevenue').textContent = `¥${formatNumber(data.roomRevenue)}`;
+                document.getElementById('depositTotal').textContent = `¥${formatNumber(data.depositTotal)}`;
                 document.getElementById('totalOrders').textContent = data.totalOrders;
-                document.getElementById('avgRoomRate').textContent = `¥${data.avgRoomRate}`;
+                document.getElementById('avgRoomRate').textContent = `¥${formatNumber(data.avgRoomRate, 0)}`;
             } catch (error) {
                 console.error('加载财务数据失败:', error);
+                // 显示默认值，避免页面空白
+                document.getElementById('roomRevenue').textContent = '¥0';
+                document.getElementById('depositTotal').textContent = '¥0';
+                document.getElementById('totalOrders').textContent = '0';
+                document.getElementById('avgRoomRate').textContent = '¥0';
             }
         }
-        
+
+        /**
+         * 加载收入趋势图表
+         */
         async function loadRevenueChart() {
             try {
-                const chart = echarts.init(document.getElementById('revenueChart'));
                 const data = await getRevenueTrendData(currentPeriod);
                 
+                // 图表配置
                 const option = {
                     tooltip: {
                         trigger: 'axis',
                         axisPointer: {
-                            type: 'cross'
-                        }
+                            type: 'cross',
+                            label: {
+                                backgroundColor: '#333'
+                            }
+                        },
+                        formatter: '{b}<br/>收入: ¥{c}'
+                    },
+                    grid: {
+                        left: '3%',
+                        right: '4%',
+                        bottom: '3%',
+                        containLabel: true
                     },
                     xAxis: {
                         type: 'category',
@@ -294,7 +394,8 @@
                             }
                         },
                         axisLabel: {
-                            color: '#6b7280'
+                            color: '#6b7280',
+                            fontSize: 12
                         }
                     },
                     yAxis: {
@@ -306,6 +407,7 @@
                         },
                         axisLabel: {
                             color: '#6b7280',
+                            fontSize: 12,
                             formatter: '¥{value}'
                         },
                         splitLine: {
@@ -315,6 +417,7 @@
                         }
                     },
                     series: [{
+                        name: '日收入',
                         data: data.revenues,
                         type: 'line',
                         smooth: true,
@@ -338,25 +441,47 @@
                                     offset: 1, color: 'rgba(59, 130, 246, 0.05)'
                                 }]
                             }
+                        },
+                        emphasis: {
+                            itemStyle: {
+                                shadowBlur: 10,
+                                shadowColor: 'rgba(59, 130, 246, 0.5)'
+                            }
                         }
                     }]
                 };
                 
-                chart.setOption(option);
+                revenueChartInstance.setOption(option);
             } catch (error) {
                 console.error('加载收入趋势图表失败:', error);
+                document.getElementById('revenueChart').innerHTML = 
+                    '<div class="text-center py-8 text-red-500">加载图表失败，请重试</div>';
             }
         }
-        
+
+        /**
+         * 加载房型收入分布图表
+         */
         async function loadRoomTypeRevenueChart() {
             try {
-                const chart = echarts.init(document.getElementById('roomTypeRevenueChart'));
                 const data = await getRoomTypeRevenueData(currentPeriod);
                 
+                // 自定义饼图颜色
+                const colors = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'];
+                
                 const option = {
+                    color: colors,
                     tooltip: {
                         trigger: 'item',
                         formatter: '{a} <br/>{b}: ¥{c} ({d}%)'
+                    },
+                    legend: {
+                        orient: 'vertical',
+                        left: 'left',
+                        textStyle: {
+                            color: '#6b7280',
+                            fontSize: 12
+                        }
                     },
                     series: [{
                         name: '房型收入',
@@ -375,126 +500,628 @@
                             borderRadius: 8,
                             borderColor: '#fff',
                             borderWidth: 2
+                        },
+                        label: {
+                            fontSize: 12,
+                            formatter: '{b}: {d}%'
                         }
                     }]
                 };
                 
-                chart.setOption(option);
+                roomTypeChartInstance.setOption(option);
             } catch (error) {
                 console.error('加载房型收入图表失败:', error);
+                document.getElementById('roomTypeRevenueChart').innerHTML = 
+                    '<div class="text-center py-8 text-red-500">加载图表失败，请重试</div>';
             }
         }
-        
+
+        /**
+         * 加载收入明细表格
+         */
         async function loadRevenueTable() {
             try {
-                const data = await getRevenueRecords(currentPeriod);
+                // 获取所有收入记录
+                allRevenueRecords = await getRevenueRecords(currentPeriod);
+                
+                // 计算分页
+                const totalRecords = allRevenueRecords.length;
+                const totalPages = Math.ceil(totalRecords / pageSize);
                 const startIndex = (currentPage - 1) * pageSize;
-                const endIndex = startIndex + pageSize;
-                const pageData = data.slice(startIndex, endIndex);
+                const endIndex = Math.min(startIndex + pageSize, totalRecords);
+                const pageData = allRevenueRecords.slice(startIndex, endIndex);
                 
                 const tbody = document.getElementById('revenueTable');
                 tbody.innerHTML = '';
                 
-                pageData.forEach(record => {
-                    const row = document.createElement('tr');
-                    row.className = 'hover:bg-gray-50';
-                    
-                    row.innerHTML = `
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            ${new Date(record.date).toLocaleDateString()}
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            ${record.roomNumber}
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            ${record.roomType}
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            ${record.guestName}
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            ¥${record.roomRate}
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            ¥${record.deposit}
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                            ¥${record.total}
-                        </td>
+                // 无数据时显示提示
+                if (totalRecords === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="7" class="px-6 py-8 text-center text-gray-500">
+                                暂无收入记录
+                            </td>
+                        </tr>
                     `;
-                    
-                    tbody.appendChild(row);
-                });
+                } else {
+                    // 渲染表格数据
+                    pageData.forEach(record => {
+                        const row = document.createElement('tr');
+                        row.className = 'hover:bg-gray-50';
+                        
+                        row.innerHTML = `
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                ${formatDate(record.date)}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                ${record.roomNumber || '-'}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                ${record.roomType || '-'}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                ${record.guestName || '-'}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                ¥${formatNumber(record.roomRate)}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                ¥${formatNumber(record.deposit)}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                ¥${formatNumber(record.total)}
+                            </td>
+                        `;
+                        
+                        tbody.appendChild(row);
+                    });
+                }
                 
                 // 更新分页信息
-                document.getElementById('tableStart').textContent = Math.min(startIndex + 1, data.length);
-                document.getElementById('tableEnd').textContent = Math.min(endIndex, data.length);
-                document.getElementById('tableTotal').textContent = data.length;
+                document.getElementById('tableStart').textContent = totalRecords > 0 ? startIndex + 1 : 0;
+                document.getElementById('tableEnd').textContent = Math.min(endIndex, totalRecords);
+                document.getElementById('tableTotal').textContent = totalRecords;
                 
-                // 更新按钮状态
-                document.getElementById('prevBtn').disabled = currentPage === 1;
-                document.getElementById('nextBtn').disabled = endIndex >= data.length;
+                // 更新分页按钮状态
+                document.getElementById('prevBtn').disabled = currentPage === 1 || totalRecords === 0;
+                document.getElementById('nextBtn').disabled = currentPage >= totalPages || totalRecords === 0;
+                
             } catch (error) {
                 console.error('加载收入表格失败:', error);
+                document.getElementById('revenueTable').innerHTML = `
+                    <tr>
+                        <td colspan="7" class="px-6 py-8 text-center text-red-500">
+                            加载数据失败，请重试
+                        </td>
+                    </tr>
+                `;
             }
         }
-        
+
+        /**
+         * 切换报表周期
+         */
         async function changeReportPeriod() {
             currentPeriod = document.getElementById('reportPeriod').value;
-            currentPage = 1;
+            currentPage = 1; // 重置到第一页
+            
+            // 显示加载状态
+            showLoadingState();
             
             try {
-                await loadFinancialData();
-                await loadRevenueChart();
-                await loadRoomTypeRevenueChart();
-                await loadRevenueTable();
+                await initializeReportsPage();
             } catch (error) {
                 console.error('切换报表周期失败:', error);
+                showErrorNotification('切换报表周期失败，请重试');
             }
         }
-        
+
+        /**
+         * 上一页
+         */
         async function previousPage() {
             if (currentPage > 1) {
                 currentPage--;
                 await loadRevenueTable();
             }
         }
-        
+
+        /**
+         * 下一页
+         */
         async function nextPage() {
-            try {
-                const data = await getRevenueRecords(currentPeriod);
-                const totalPages = Math.ceil(data.length / pageSize);
-                
-                if (currentPage < totalPages) {
-                    currentPage++;
-                    await loadRevenueTable();
-                }
-            } catch (error) {
-                console.error('翻页失败:', error);
+            const totalPages = Math.ceil(allRevenueRecords.length / pageSize);
+            if (currentPage < totalPages) {
+                currentPage++;
+                await loadRevenueTable();
             }
         }
-        
+
+        /**
+         * 导出报表为CSV文件
+         */
         async function exportReport() {
             try {
+                // 显示加载提示
+                const originalText = document.querySelector('button[onclick="exportReport()"] span').textContent;
+                document.querySelector('button[onclick="exportReport()"] span').textContent = '导出中...';
+                
+                // 获取完整数据
                 const data = await getRevenueRecords(currentPeriod);
-                let csvContent = "日期,房间号,房型,客人姓名,房费,押金,总计\n";
+                
+                if (data.length === 0) {
+                    alert('当前周期暂无数据可导出');
+                    document.querySelector('button[onclick="exportReport()"] span').textContent = originalText;
+                    return;
+                }
+                
+                // 构建CSV内容（处理中文编码）
+                let csvContent = "\uFEFF"; // BOM头，解决Excel中文乱码
+                csvContent += "日期,房间号,房型,客人姓名,房费,押金,总计\n";
                 
                 data.forEach(record => {
-                    csvContent += `${new Date(record.date).toLocaleDateString()},${record.roomNumber},${record.roomType},${record.guestName},${record.roomRate},${record.deposit},${record.total}\n`;
+                    const row = [
+                        formatDate(record.date),
+                        record.roomNumber || '',
+                        record.roomType || '',
+                        record.guestName || '',
+                        record.roomRate || 0,
+                        record.deposit || 0,
+                        record.total || 0
+                    ].map(field => {
+                        // 处理包含逗号的字段，用双引号包裹
+                        return `"${String(field).replace(/"/g, '""')}"`;
+                    }).join(',');
+                    
+                    csvContent += row + "\n";
                 });
                 
+                // 创建并下载文件
                 const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-                const link = document.createElement('a');
                 const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                
+                // 生成文件名
+                const periodNames = {
+                    today: '今日',
+                    week: '本周',
+                    month: '本月',
+                    year: '本年'
+                };
+                const fileName = `财务报表_${periodNames[currentPeriod]}_${formatDate(new Date(), 'YYYYMMDD')}.csv`;
+                
                 link.setAttribute('href', url);
-                link.setAttribute('download', `财务报表_${currentPeriod}_${new Date().toISOString().split('T')[0]}.csv`);
+                link.setAttribute('download', fileName);
                 link.style.visibility = 'hidden';
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
+                
+                // 恢复按钮文本
+                document.querySelector('button[onclick="exportReport()"] span').textContent = originalText;
+                showSuccessNotification('报表导出成功');
+                
             } catch (error) {
-                alert('导出报表失败：' + error.message);
+                console.error('导出报表失败:', error);
+                // 恢复按钮文本
+                document.querySelector('button[onclick="exportReport()"] span').textContent = '导出报表';
+                showErrorNotification('导出报表失败：' + error.message);
             }
+        }
+
+        // ===================== 数据获取函数（LeanCloud交互） =====================
+        /**
+         * 获取核心财务数据
+         * @param {string} period 时间周期: today/week/month/year
+         * @returns {Object} 财务汇总数据
+         */
+        async function getFinancialData(period) {
+            // 构建时间查询条件
+            const { startDate, endDate } = getDateRange(period);
+            
+            // 查询订单/客人数据
+            const Guest = AV.Object.extend('Guest');
+            const query = new AV.Query(Guest);
+            query.greaterThanOrEqualTo('checkinTime', startDate);
+            query.lessThanOrEqualTo('checkinTime', endDate);
+            query.equalTo('status', 'checkin'); // 只查已入住的订单
+            
+            const results = await query.find();
+            
+            // 计算汇总数据
+            let roomRevenue = 0;
+            let depositTotal = 0;
+            let totalOrders = results.length;
+            
+            results.forEach(guest => {
+                const roomRate = guest.get('roomRate') || 0;
+                const deposit = guest.get('deposit') || 0;
+                
+                roomRevenue += roomRate;
+                depositTotal += deposit;
+            });
+            
+            // 计算平均房价
+            const avgRoomRate = totalOrders > 0 ? (roomRevenue / totalOrders).toFixed(0) : 0;
+            
+            return {
+                roomRevenue: Math.round(roomRevenue),
+                depositTotal: Math.round(depositTotal),
+                totalOrders,
+                avgRoomRate
+            };
+        }
+
+        /**
+         * 获取收入趋势数据
+         * @param {string} period 时间周期
+         * @returns {Object} 包含dates和revenues的趋势数据
+         */
+        async function getRevenueTrendData(period) {
+            const { startDate, endDate } = getDateRange(period);
+            const dates = [];
+            const revenues = [];
+            
+            // 根据不同周期生成日期数组
+            if (period === 'today') {
+                // 今日按小时统计（简化为按天）
+                dates.push(formatDate(new Date()));
+                const financialData = await getFinancialData('today');
+                revenues.push(financialData.roomRevenue);
+                
+            } else if (period === 'week') {
+                // 本周按天统计
+                for (let i = 0; i < 7; i++) {
+                    const date = new Date(startDate);
+                    date.setDate(startDate.getDate() + i);
+                    if (date > endDate) break;
+                    
+                    dates.push(formatDate(date, 'MM-DD'));
+                    
+                    // 查询当天数据
+                    const dayStart = new Date(date);
+                    dayStart.setHours(0, 0, 0, 0);
+                    const dayEnd = new Date(date);
+                    dayEnd.setHours(23, 59, 59, 999);
+                    
+                    const Guest = AV.Object.extend('Guest');
+                    const query = new AV.Query(Guest);
+                    query.greaterThanOrEqualTo('checkinTime', dayStart);
+                    query.lessThanOrEqualTo('checkinTime', dayEnd);
+                    query.equalTo('status', 'checkin');
+                    
+                    const results = await query.find();
+                    const revenue = results.reduce((sum, guest) => sum + (guest.get('roomRate') || 0), 0);
+                    revenues.push(Math.round(revenue));
+                }
+                
+            } else if (period === 'month') {
+                // 本月按天统计（取最近15天）
+                const daysInMonth = new Date(endDate.getFullYear(), endDate.getMonth() + 1, 0).getDate();
+                const startDay = Math.max(1, daysInMonth - 14);
+                
+                for (let day = startDay; day <= daysInMonth; day++) {
+                    const date = new Date(endDate.getFullYear(), endDate.getMonth(), day);
+                    dates.push(formatDate(date, 'MM-DD'));
+                    
+                    const dayStart = new Date(date);
+                    dayStart.setHours(0, 0, 0, 0);
+                    const dayEnd = new Date(date);
+                    dayEnd.setHours(23, 59, 59, 999);
+                    
+                    const Guest = AV.Object.extend('Guest');
+                    const query = new AV.Query(Guest);
+                    query.greaterThanOrEqualTo('checkinTime', dayStart);
+                    query.lessThanOrEqualTo('checkinTime', dayEnd);
+                    query.equalTo('status', 'checkin');
+                    
+                    const results = await query.find();
+                    const revenue = results.reduce((sum, guest) => sum + (guest.get('roomRate') || 0), 0);
+                    revenues.push(Math.round(revenue));
+                }
+                
+            } else if (period === 'year') {
+                // 本年按月统计
+                for (let month = 0; month < 12; month++) {
+                    const date = new Date(endDate.getFullYear(), month, 1);
+                    if (date > endDate) break;
+                    
+                    dates.push(formatDate(date, 'MM月'));
+                    
+                    const monthStart = new Date(date.getFullYear(), month, 1);
+                    const monthEnd = new Date(date.getFullYear(), month + 1, 0, 23, 59, 59, 999);
+                    
+                    const Guest = AV.Object.extend('Guest');
+                    const query = new AV.Query(Guest);
+                    query.greaterThanOrEqualTo('checkinTime', monthStart);
+                    query.lessThanOrEqualTo('checkinTime', monthEnd);
+                    query.equalTo('status', 'checkin');
+                    
+                    const results = await query.find();
+                    const revenue = results.reduce((sum, guest) => sum + (guest.get('roomRate') || 0), 0);
+                    revenues.push(Math.round(revenue));
+                }
+            }
+            
+            return { dates, revenues };
+        }
+
+        /**
+         * 获取房型收入分布数据
+         * @param {string} period 时间周期
+         * @returns {Array} 房型收入数据
+         */
+        async function getRoomTypeRevenueData(period) {
+            const { startDate, endDate } = getDateRange(period);
+            
+            // 查询订单数据
+            const Guest = AV.Object.extend('Guest');
+            const query = new AV.Query(Guest);
+            query.greaterThanOrEqualTo('checkinTime', startDate);
+            query.lessThanOrEqualTo('checkinTime', endDate);
+            query.equalTo('status', 'checkin');
+            const guests = await query.find();
+            
+            // 按房型分组统计收入
+            const roomTypeRevenue = {};
+            
+            for (const guest of guests) {
+                const roomType = guest.get('roomType') || '未知房型';
+                const roomRate = guest.get('roomRate') || 0;
+                
+                if (!roomTypeRevenue[roomType]) {
+                    roomTypeRevenue[roomType] = 0;
+                }
+                roomTypeRevenue[roomType] += roomRate;
+            }
+            
+            // 转换为ECharts需要的格式
+            return Object.entries(roomTypeRevenue).map(([name, value]) => ({
+                name,
+                value: Math.round(value)
+            }));
+        }
+
+        /**
+         * 获取收入明细记录
+         * @param {string} period 时间周期
+         * @returns {Array} 收入明细数组
+         */
+        async function getRevenueRecords(period) {
+            const { startDate, endDate } = getDateRange(period);
+            
+            // 查询订单数据
+            const Guest = AV.Object.extend('Guest');
+            const query = new AV.Query(Guest);
+            query.greaterThanOrEqualTo('checkinTime', startDate);
+            query.lessThanOrEqualTo('checkinTime', endDate);
+            query.equalTo('status', 'checkin');
+            query.descending('checkinTime'); // 按入住时间降序排列
+            const guests = await query.find();
+            
+            // 转换为明细记录格式
+            return guests.map(guest => {
+                const roomRate = guest.get('roomRate') || 0;
+                const deposit = guest.get('deposit') || 0;
+                
+                return {
+                    date: guest.get('checkinTime') || new Date(),
+                    roomNumber: guest.get('roomNumber'),
+                    roomType: guest.get('roomType'),
+                    guestName: guest.get('name'),
+                    roomRate,
+                    deposit,
+                    total: roomRate + deposit
+                };
+            });
+        }
+
+        // ===================== 辅助函数 =====================
+        /**
+         * 初始化图表实例
+         */
+        function initCharts() {
+            revenueChartInstance = echarts.init(document.getElementById('revenueChart'));
+            roomTypeChartInstance = echarts.init(document.getElementById('roomTypeRevenueChart'));
+        }
+
+        /**
+         * 根据周期获取日期范围
+         * @param {string} period 时间周期
+         * @returns {Object} 包含startDate和endDate的对象
+         */
+        function getDateRange(period) {
+            const now = new Date();
+            let startDate, endDate;
+            
+            switch (period) {
+                case 'today':
+                    startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                    endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+                    break;
+                    
+                case 'week':
+                    // 本周（周一到周日）
+                    const day = now.getDay() || 7; // 周日为7
+                    startDate = new Date(now);
+                    startDate.setDate(now.getDate() - day + 1);
+                    startDate.setHours(0, 0, 0, 0);
+                    
+                    endDate = new Date(startDate);
+                    endDate.setDate(startDate.getDate() + 6);
+                    endDate.setHours(23, 59, 59, 999);
+                    break;
+                    
+                case 'month':
+                    // 本月
+                    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                    endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+                    break;
+                    
+                case 'year':
+                    // 本年
+                    startDate = new Date(now.getFullYear(), 0, 1);
+                    endDate = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+                    break;
+                    
+                default:
+                    startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                    endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+            }
+            
+            return { startDate, endDate };
+        }
+
+        /**
+         * 格式化数字（千分位分隔）
+         * @param {number} num 要格式化的数字
+         * @param {number} decimal 小数位数，默认2
+         * @returns {string} 格式化后的字符串
+         */
+        function formatNumber(num, decimal = 2) {
+            if (isNaN(num)) return '0';
+            return Number(num).toFixed(decimal).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        }
+
+        /**
+         * 格式化日期
+         * @param {Date} date 日期对象
+         * @param {string} format 格式，默认YYYY-MM-DD
+         * @returns {string} 格式化后的日期字符串
+         */
+        function formatDate(date, format = 'YYYY-MM-DD') {
+            if (!(date instanceof Date)) date = new Date(date);
+            
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            
+            return format.replace('YYYY', year)
+                         .replace('MM', month)
+                         .replace('DD', day);
+        }
+
+        /**
+         * 更新当前时间显示
+         */
+        function updateCurrentTime() {
+            const now = new Date();
+            const timeStr = now.toLocaleString('zh-CN', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            document.getElementById('currentTime').textContent = timeStr;
+        }
+
+        /**
+         * 切换侧边栏显示/隐藏（移动端）
+         */
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('active');
+        }
+
+        /**
+         * 显示加载状态
+         */
+        function showLoadingState() {
+            // 图表加载状态
+            document.getElementById('revenueChart').innerHTML = `
+                <div class="loading">
+                    <div class="loading-spinner"></div>
+                    <span>加载中...</span>
+                </div>
+            `;
+            document.getElementById('roomTypeRevenueChart').innerHTML = `
+                <div class="loading">
+                    <div class="loading-spinner"></div>
+                    <span>加载中...</span>
+                </div>
+            `;
+            
+            // 表格加载状态
+            document.getElementById('revenueTable').innerHTML = `
+                <tr>
+                    <td colspan="7" class="px-6 py-8 text-center text-gray-500">
+                        <div class="loading">
+                            <div class="loading-spinner"></div>
+                            <span>加载中...</span>
+                        </div>
+                    </td>
+                </tr>
+            `;
+            
+            // 重置统计卡片
+            document.getElementById('roomRevenue').textContent = '¥0';
+            document.getElementById('depositTotal').textContent = '¥0';
+            document.getElementById('totalOrders').textContent = '0';
+            document.getElementById('avgRoomRate').textContent = '¥0';
+        }
+
+        /**
+         * 显示成功提示
+         * @param {string} message 提示信息
+         */
+        function showSuccessNotification(message) {
+            // 创建临时提示元素
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: #10b981;
+                color: white;
+                padding: 12px 20px;
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                z-index: 9999;
+                transition: all 0.3s ease;
+            `;
+            notification.textContent = message;
+            document.body.appendChild(notification);
+            
+            // 3秒后移除
+            setTimeout(() => {
+                notification.style.opacity = '0';
+                setTimeout(() => {
+                    document.body.removeChild(notification);
+                }, 300);
+            }, 3000);
+        }
+
+        /**
+         * 显示错误提示
+         * @param {string} message 提示信息
+         */
+        function showErrorNotification(message) {
+            // 创建临时提示元素
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: #ef4444;
+                color: white;
+                padding: 12px 20px;
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                z-index: 9999;
+                transition: all 0.3s ease;
+            `;
+            notification.textContent = message;
+            document.body.appendChild(notification);
+            
+            // 3秒后移除
+            setTimeout(() => {
+                notification.style.opacity = '0';
+                setTimeout(() => {
+                    document.body.removeChild(notification);
+                }, 300);
+            }, 3000);
         }
     </script>
 </body>
