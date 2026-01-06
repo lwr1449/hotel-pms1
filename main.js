@@ -1,14 +1,18 @@
 // 酒店管理系统 - LeanCloud 版本主要JavaScript文件
 
 // ==================== LeanCloud 初始化 ====================
-// 引入 LeanCloud SDK 需要在 HTML 中添加：<script src="https://cdn.jsdelivr.net/npm/leancloud-storage@4.15.0/dist/av-min.js"></script>
-
-// 初始化 LeanCloud
-AV.init({
-    appId: "IaRgqtY5ZsQ72Au6jlp9Hsaf-gzGzoHsz",
-    appKey: "joOWlusq1YBc1QyEAcgZEHxv",
-    serverURL: "https://iargqty5.lc-cn-n1-shared.com"
-});
+// 1. 先检查是否已经初始化，避免重复初始化（解决重复初始化提示）
+if (!AV.applicationId) {
+  // 2. 配置存储适配器（解决 storage adapter is not configured 错误）
+  AV.setStorageAdapter(new AV.LocalStorageAdapter());
+  
+  // 3. 初始化 LeanCloud（替换成你自己的 AppID、AppKey、服务器地址）
+  AV.init({
+    appId: 'IaRgqtY5ZsQ72Au6jlp9Hsaf-gzGzoHsz', // 替换成控制台的AppID
+    appKey: 'joOWlusq1YBc1QyEAcgZEHxv', // 替换成控制台的AppKey
+    serverURL: 'https://iargqty5.lc-cn-n1-shared.com' // 替换成控制台的服务器地址
+  });
+}
 
 // 房间数据结构（仅用于首次初始化）
 const roomData = [
