@@ -210,7 +210,7 @@
                 <div class="bg-white rounded-xl shadow-sm p-6">
                     <h3 class="text-lg font-semibold text-gray-900 mb-6">客人信息</h3>
                     
-                    <form id="checkinForm" class="space-y-4">
+                    <form id="checkinForm" class="space-y-4" onsubmit="showConfirmModal(event)">
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-2">姓名 *</label>
                             <input type="text" id="guestName" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="请输入客人姓名">
@@ -300,23 +300,40 @@
         </div>
     </div>
 
-    <script src="main.js"></script>
     <script>
-        // 页面特定的JavaScript代码
+        // ===================== LeanCloud 初始化 =====================
+        AV.init({
+            appId: "IaRgqtY5ZsQ72Au6jlp9Hsaf-gzGzoHsz",
+            appKey: "joOWlusq1YBc1QyEAcgZEHxv",
+            serverURLs: "https://iargqty5.lc-cn-n1-shared.com"
+        });
+
+        // ===================== 全局变量 =====================
         let selectedRoom = null;
         let selectedRoomType = null;
-        
-        // 初始化页面
+        // 存储房型默认价格
+        const roomTypeDefaultRates = {
+            "单人间": 198,
+            "双人间": 298,
+            "套房": 598,
+            "豪华套房": 898
+        };
+
+        // ===================== 页面初始化 =====================
         document.addEventListener('DOMContentLoaded', async function() {
             await initializeCheckinPage();
             setDefaultDates();
+            updateCurrentTime();
+            setInterval(updateCurrentTime, 1000);
         });
-        
+
+        // ===================== 核心功能函数 =====================
         async function initializeCheckinPage() {
             await loadRoomsForSelection();
             await populateRoomTypeFilter();
         }
-        
+
+        // 设置默认日期（今日入住，明日退房）
         function setDefaultDates() {
             const today = new Date();
             const tomorrow = new Date(today);
@@ -325,18 +342,19 @@
             document.getElementById('checkinDate').value = today.toISOString().split('T')[0];
             document.getElementById('checkoutDate').value = tomorrow.toISOString().split('T')[0];
         }
-        
-        async function loadRoomsForSelection() {
+
+        // 加载房间列表（从LeanCloud获取）
+        async function loadRoomsForSelection(filterType = '') {
             const roomsGrid = document.getElementById('roomsSelectionGrid');
             roomsGrid.innerHTML = '';
             
             try {
-                const rooms = await getAllRooms();
+                const rooms = await getAllRooms(filterType);
                 
                 rooms.forEach(room => {
                     const roomCard = document.createElement('div');
                     roomCard.className = `room-selector p-3 rounded-lg border-2 cursor-pointer text-center font-medium ${room.status}`;
-                    roomCard.onclick = () => selectRoom(room);
+                    roomCard.onclick = (e) => selectRoom(room, e);
                     
                     roomCard.innerHTML = `
                         <div class="text-lg font-bold">${room.number}</div>
@@ -347,10 +365,12 @@
                 });
             } catch (error) {
                 console.error('加载房间列表失败:', error);
+                alert('加载房间列表失败，请刷新页面重试');
             }
         }
-        
-        function selectRoom(room) {
+
+        // 选择房间
+        function selectRoom(room, e) {
             if (room.status === 'occupied') {
                 alert('该房间已被占用，请选择其他房间');
                 return;
@@ -362,7 +382,7 @@
             });
             
             // 添加选中状态
-            event.target.closest('.room-selector').classList.add('selected');
+            e.currentTarget.classList.add('selected');
             
             selectedRoom = room;
             selectedRoomType = room.type;
@@ -371,7 +391,8 @@
             const defaultRate = getDefaultRoomRate(room.type);
             document.getElementById('roomRate').value = defaultRate;
         }
-        
+
+        // 填充房型筛选下拉框
         async function populateRoomTypeFilter() {
             const filter = document.getElementById('roomTypeFilter');
             const roomTypes = getRoomTypes();
@@ -383,159 +404,275 @@
                 filter.appendChild(option);
             });
         }
-        
+
+        // 按房型筛选房间
         function filterRoomsByType() {
             const selectedType = document.getElementById('roomTypeFilter').value;
-            const roomCards = document.querySelectorAll('.room-selector');
-            
-            roomCards.forEach(card => {
-                const roomType = card.querySelector('.text-xs').textContent;
-                if (!selectedType || roomType === selectedType) {
-                    card.style.display = 'block';
-                } else {
-                    card.style.display = 'none';
-                }
-            });
+            loadRoomsForSelection(selectedType);
         }
-        
-        // 表单提交处理
-        document.getElementById('checkinForm').addEventListener('submit', function(e) {
-            e.preventDefault();
+
+        // 显示确认模态框
+        function showConfirmModal(event) {
+            event.preventDefault();
             
+            // 校验是否选择房间
             if (!selectedRoom) {
-                alert('请先选择房间');
+                alert('请先选择一个可入住的房间');
                 return;
             }
-            
+
+            // 收集表单数据
             const formData = {
-                guestName: document.getElementById('guestName').value,
-                guestPhone: document.getElementById('guestPhone').value,
-                guestIdCard: document.getElementById('guestIdCard').value,
+                guestName: document.getElementById('guestName').value.trim(),
+                guestPhone: document.getElementById('guestPhone').value.trim(),
+                guestIdCard: document.getElementById('guestIdCard').value.trim(),
                 guestCount: document.getElementById('guestCount').value,
                 checkinDate: document.getElementById('checkinDate').value,
                 checkoutDate: document.getElementById('checkoutDate').value,
-                roomRate: document.getElementById('roomRate').value,
+                roomRate: document.getElementById('roomRate').value || getDefaultRoomRate(selectedRoomType),
                 deposit: document.getElementById('deposit').value || 0,
-                notes: document.getElementById('notes').value
+                notes: document.getElementById('notes').value.trim(),
+                roomNumber: selectedRoom.number,
+                roomType: selectedRoomType
             };
-            
-            // 验证必填字段
-            if (!formData.guestName || !formData.guestPhone || !formData.checkinDate || !formData.checkoutDate) {
-                alert('请填写所有必填字段');
+
+            // 校验日期逻辑
+            const checkinDate = new Date(formData.checkinDate);
+            const checkoutDate = new Date(formData.checkoutDate);
+            if (checkoutDate <= checkinDate) {
+                alert('退房日期必须晚于入住日期');
                 return;
             }
-            
-            showConfirmModal(formData);
-        });
-        
-        function showConfirmModal(formData) {
-            const confirmInfo = document.getElementById('confirmInfo');
+
+            // 计算入住天数和总费用
             const nights = calculateNights(formData.checkinDate, formData.checkoutDate);
-            const totalAmount = nights * formData.roomRate;
-            
+            const totalAmount = nights * Number(formData.roomRate);
+
+            // 渲染确认信息
+            const confirmInfo = document.getElementById('confirmInfo');
             confirmInfo.innerHTML = `
-                <div class="bg-blue-50 rounded-lg p-4 mb-4">
-                    <h4 class="font-medium text-blue-900 mb-2">房间信息</h4>
-                    <p><span class="text-gray-600">房间号:</span> ${selectedRoom.number}</p>
-                    <p><span class="text-gray-600">房型:</span> ${selectedRoomType}</p>
+                <div class="p-3 bg-gray-50 rounded-lg">
+                    <p class="font-medium">房间信息</p>
+                    <p>房间号：${formData.roomNumber}（${formData.roomType}）</p>
+                    <p>房价：${formData.roomRate} 元/晚</p>
                 </div>
-                
-                <div class="bg-gray-50 rounded-lg p-4 mb-4">
-                    <h4 class="font-medium text-gray-900 mb-2">客人信息</h4>
-                    <p><span class="text-gray-600">姓名:</span> ${formData.guestName}</p>
-                    <p><span class="text-gray-600">手机:</span> ${formData.guestPhone}</p>
-                    <p><span class="text-gray-600">入住人数:</span> ${formData.guestCount}人</p>
+                <div class="p-3 bg-gray-50 rounded-lg">
+                    <p class="font-medium">客人信息</p>
+                    <p>姓名：${formData.guestName}</p>
+                    <p>手机号：${formData.guestPhone}</p>
+                    ${formData.guestIdCard ? `<p>身份证号：${formData.guestIdCard}</p>` : ''}
+                    <p>入住人数：${formData.guestCount} 人</p>
                 </div>
-                
-                <div class="bg-green-50 rounded-lg p-4">
-                    <h4 class="font-medium text-green-900 mb-2">费用信息</h4>
-                    <p><span class="text-gray-600">入住日期:</span> ${formData.checkinDate}</p>
-                    <p><span class="text-gray-600">退房日期:</span> ${formData.checkoutDate}</p>
-                    <p><span class="text-gray-600">入住天数:</span> ${nights}晚</p>
-                    <p><span class="text-gray-600">房价:</span> ¥${formData.roomRate}/晚</p>
-                    <p><span class="text-gray-600">押金:</span> ¥${formData.deposit}</p>
-                    <p class="font-bold text-lg mt-2 pt-2 border-t border-green-200">
-                        <span class="text-gray-700">总计:</span> ¥${totalAmount}
-                    </p>
+                <div class="p-3 bg-gray-50 rounded-lg">
+                    <p class="font-medium">日期 & 费用</p>
+                    <p>入住日期：${formData.checkinDate}</p>
+                    <p>退房日期：${formData.checkoutDate}</p>
+                    <p>入住天数：${nights} 晚</p>
+                    <p>总费用：${totalAmount} 元</p>
+                    <p>押金：${formData.deposit} 元</p>
                 </div>
+                ${formData.notes ? `<div class="p-3 bg-gray-50 rounded-lg">
+                    <p class="font-medium">备注</p>
+                    <p>${formData.notes}</p>
+                </div>` : ''}
             `;
+
+            // 存储表单数据到全局，供提交时使用
+            window.checkinFormData = formData;
             
+            // 显示模态框
             document.getElementById('confirmCheckinModal').classList.remove('hidden');
-            document.getElementById('confirmCheckinModal').classList.add('flex');
+            document.getElementById('confirmCheckinModal').style.display = 'flex';
         }
-        
+
+        // 关闭确认模态框
         function closeConfirmModal() {
             document.getElementById('confirmCheckinModal').classList.add('hidden');
-            document.getElementById('confirmCheckinModal').classList.remove('flex');
+            document.getElementById('confirmCheckinModal').style.display = 'none';
         }
-        
+
+        // 提交入住信息到LeanCloud
         async function submitCheckin() {
-            const formData = {
-                guestName: document.getElementById('guestName').value,
-                guestPhone: document.getElementById('guestPhone').value,
-                guestIdCard: document.getElementById('guestIdCard').value,
-                guestCount: parseInt(document.getElementById('guestCount').value),
-                checkinDate: document.getElementById('checkinDate').value,
-                checkoutDate: document.getElementById('checkoutDate').value,
-                roomRate: parseFloat(document.getElementById('roomRate').value),
-                deposit: parseFloat(document.getElementById('deposit').value) || 0,
-                notes: document.getElementById('notes').value,
-                roomNumber: selectedRoom.number,
-                roomType: selectedRoomType,
-                checkinTime: new Date().toISOString()
-            };
-            
+            const formData = window.checkinFormData;
+            if (!formData) return;
+
+            // 禁用提交按钮防止重复提交
+            const submitBtn = document.querySelector('#confirmCheckinModal button:last-child');
+            submitBtn.disabled = true;
+            submitBtn.textContent = '提交中...';
+
             try {
-                // 保存入住记录
-                await saveCheckinRecord(formData);
+                // 1. 创建入住记录
+                const CheckIn = AV.Object.extend('CheckIn');
+                const checkinRecord = new CheckIn();
                 
-                // 更新房间状态
-                await updateRoomStatus(selectedRoom.number, 'occupied');
-                
-                // 关闭模态框
+                // 填充入住数据
+                checkinRecord.set('roomNumber', formData.roomNumber);
+                checkinRecord.set('roomType', formData.roomType);
+                checkinRecord.set('roomRate', Number(formData.roomRate));
+                checkinRecord.set('guestName', formData.guestName);
+                checkinRecord.set('guestPhone', formData.guestPhone);
+                checkinRecord.set('guestIdCard', formData.guestIdCard);
+                checkinRecord.set('guestCount', Number(formData.guestCount));
+                checkinRecord.set('checkinDate', formData.checkinDate);
+                checkinRecord.set('checkoutDate', formData.checkoutDate);
+                checkinRecord.set('nights', calculateNights(formData.checkinDate, formData.checkoutDate));
+                checkinRecord.set('totalAmount', Number(formData.roomRate) * calculateNights(formData.checkinDate, formData.checkoutDate));
+                checkinRecord.set('deposit', Number(formData.deposit));
+                checkinRecord.set('notes', formData.notes);
+                checkinRecord.set('checkinTime', new Date().toISOString());
+
+                // 2. 保存入住记录
+                await checkinRecord.save();
+
+                // 3. 更新房间状态为已入住
+                const Room = AV.Object.extend('Room');
+                const roomQuery = new AV.Query(Room);
+                const room = await roomQuery.equalTo('number', formData.roomNumber).first();
+                if (room) {
+                    room.set('status', 'occupied');
+                    await room.save();
+                }
+
+                // 提交成功
+                alert('入住登记成功！数据已同步到云端');
                 closeConfirmModal();
-                
-                // 显示成功消息
-                alert('入住登记成功！');
-                
-                // 重置表单
                 resetForm();
-                
-                // 刷新房间选择
-                await loadRoomsForSelection();
+                loadRoomsForSelection(); // 刷新房间列表（更新房态）
+
             } catch (error) {
-                alert('入住登记失败：' + error.message);
+                console.error('提交入住信息失败:', error);
+                alert(`提交失败：${error.message || '网络异常，请重试'}`);
+            } finally {
+                // 恢复按钮状态
+                submitBtn.disabled = false;
+                submitBtn.textContent = '确认入住';
             }
         }
-        
-        function calculateNights(checkin, checkout) {
-            const checkinDate = new Date(checkin);
-            const checkoutDate = new Date(checkout);
-            const diffTime = checkoutDate - checkinDate;
-            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-            return diffDays > 0 ? diffDays : 1;
-        }
-        
+
+        // 重置表单
         function resetForm() {
             document.getElementById('checkinForm').reset();
             setDefaultDates();
             selectedRoom = null;
             selectedRoomType = null;
-            
-            // 清除房间选择
+            // 移除房间选中状态
             document.querySelectorAll('.room-selector').forEach(el => {
                 el.classList.remove('selected');
             });
         }
-        
-        function getStatusText(status) {
-            const statusMap = {
-                'vacant': '可入住',
-                'occupied': '已入住',
-                'cleaning': '清扫中',
-                'maintenance': '维修中'
+
+        // 切换侧边栏（移动端）
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('active');
+        }
+
+        // 更新底部当前时间
+        function updateCurrentTime() {
+            const now = new Date();
+            document.getElementById('currentTime').textContent = now.toLocaleString('zh-CN');
+        }
+
+        // ===================== 工具函数（对接LeanCloud） =====================
+        // 获取所有房间（支持按房型筛选）
+        async function getAllRooms(filterType = '') {
+            try {
+                const Room = AV.Object.extend('Room');
+                const query = new AV.Query(Room);
+                
+                // 如果有房型筛选，添加条件
+                if (filterType) {
+                    query.equalTo('type', filterType);
+                }
+                
+                // 按房间号排序
+                query.ascending('number');
+                
+                const roomObjects = await query.find();
+                
+                // 转换为普通对象
+                return roomObjects.map(room => ({
+                    id: room.id,
+                    number: room.get('number'),
+                    type: room.get('type'),
+                    status: room.get('status') || 'vacant' // vacant=可入住，occupied=已入住
+                }));
+            } catch (error) {
+                console.error('获取房间列表失败:', error);
+                // 如果LeanCloud中没有房间数据，生成模拟数据（首次使用）
+                return generateMockRooms(filterType);
+            }
+        }
+
+        // 获取所有房型
+        function getRoomTypes() {
+            return Object.keys(roomTypeDefaultRates);
+        }
+
+        // 获取房型默认价格
+        function getDefaultRoomRate(roomType) {
+            return roomTypeDefaultRates[roomType] || 198;
+        }
+
+        // 计算入住天数
+        function calculateNights(checkinDate, checkoutDate) {
+            const start = new Date(checkinDate);
+            const end = new Date(checkoutDate);
+            if (end <= start) return 0;
+            const diffTime = end - start;
+            return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        }
+
+        // 生成模拟房间数据（首次使用，LeanCloud无数据时）
+        function generateMockRooms(filterType = '') {
+            const mockRooms = [];
+            const roomTypes = ['单人间', '双人间', '套房', '豪华套房'];
+            const roomCounts = {
+                '单人间': 20,
+                '双人间': 30,
+                '套房': 10,
+                '豪华套房': 5
             };
-            return statusMap[status] || status;
+
+            let roomNum = 101;
+            roomTypes.forEach(type => {
+                if (filterType && filterType !== type) return;
+                
+                for (let i = 0; i < roomCounts[type]; i++) {
+                    mockRooms.push({
+                        id: `mock-${roomNum}`,
+                        number: roomNum++,
+                        type: type,
+                        status: Math.random() > 0.3 ? 'vacant' : 'occupied' // 70%可入住，30%已入住
+                    });
+                }
+            });
+
+            // 首次使用时自动将模拟数据存入LeanCloud
+            if (filterType === '') {
+                saveMockRoomsToLeanCloud(mockRooms);
+            }
+
+            return mockRooms;
+        }
+
+        // 保存模拟房间数据到LeanCloud
+        async function saveMockRoomsToLeanCloud(rooms) {
+            try {
+                const Room = AV.Object.extend('Room');
+                const roomObjects = rooms.map(room => {
+                    const r = new Room();
+                    r.set('number', room.number);
+                    r.set('type', room.type);
+                    r.set('status', room.status);
+                    return r;
+                });
+                await AV.Object.saveAll(roomObjects);
+                console.log('模拟房间数据已存入LeanCloud');
+            } catch (error) {
+                console.error('保存模拟房间数据失败:', error);
+            }
         }
     </script>
 </body>
