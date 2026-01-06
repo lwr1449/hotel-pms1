@@ -1,7 +1,7 @@
 // main.js 最顶部添加这段初始化代码
 // 1. 替换成你自己的LeanCloud AppID和AppKey（去LeanCloud控制台看）
-const APP_ID = "你的LeanCloud应用AppID";
-const APP_KEY = "你的LeanCloud应用AppKey";
+const APP_ID = "IaRgqtY5ZsQ72Au6jlp9Hsaf-gzGzoHsz";
+const APP_KEY = "joOWlusq1YBc1QyEAcgZEHxv";
 
 // 2. 正确初始化LeanCloud（修复LocalStorageAdapter和Not initialized）
 AV.init({
