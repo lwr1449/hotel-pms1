@@ -1,10 +1,22 @@
+// main.js 最顶部添加这段初始化代码
+// 1. 替换成你自己的LeanCloud AppID和AppKey（去LeanCloud控制台看）
+const APP_ID = "你的LeanCloud应用AppID";
+const APP_KEY = "你的LeanCloud应用AppKey";
+
+// 2. 正确初始化LeanCloud（修复LocalStorageAdapter和Not initialized）
+AV.init({
+  appId: APP_ID,
+  appKey: APP_KEY,
+  // 修复LocalStorageAdapter错误：不用new，直接指定storageAdapter
+  storageAdapter: AV.LocalStorageAdapter // 去掉new，因为它不是构造函数
+});
 // 酒店管理系统 - LeanCloud 版本主要JavaScript文件
 
 // ==================== LeanCloud 初始化 ====================
 // 1. 先检查是否已经初始化，避免重复初始化（解决重复初始化提示）
 if (!AV.applicationId) {
   // 2. 配置存储适配器（解决 storage adapter is not configured 错误）
-  AV.setStorageAdapter(new AV.LocalStorageAdapter());
+  AV.setStorageAdapter(AV.LocalStorageAdapter());
   
   // 3. 初始化 LeanCloud（替换成你自己的 AppID、AppKey、服务器地址）
   AV.init({
@@ -165,24 +177,17 @@ async function initializeDatabase() {
 }
 
 // 获取所有房间
-async function getAllRooms() {
-    try {
-        const query = new AV.Query('HotelRooms');
-        query.ascending('number');
-        const results = await query.find();
-        
-        return results.map(obj => ({
-            id: obj.id,
-            number: obj.get('number'),
-            type: obj.get('type'),
-            floor: obj.get('floor'),
-            status: obj.get('status'),
-            lastUpdate: obj.get('lastUpdate')
-        }));
-    } catch (error) {
-        console.error('获取房间失败:', error);
-        return [];
+// 找main.js里的getRoomTypes函数，换成这个
+async function getRoomTypes() {
+  // 先确保加载完房间数据，再用roomData
+  const roomData = await getAllRooms(); // 先获取roomData，再后续操作
+  const roomTypes = [];
+  roomData.forEach(room => {
+    if (!roomTypes.includes(room.roomType)) {
+      roomTypes.push(room.roomType);
     }
+  });
+  return roomTypes;
 }
 
 // 获取房间类型列表
