@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>入住登记 - 酒店管理系统</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/leancloud-storage@4.15.0/dist/av-min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        * {
+            font-family: 'Inter', sans-serif;
+        }
+        
+        .room-selector {
+            transition: all 0.2s ease;
+        }
+        
+        .room-selector.selected {
+            background-color: #3b82f6;
+            color: white;
+            transform: scale(1.05);
+        }
+        
+        .room-selector.vacant {
+            background-color: #ecfdf5;
+            color: #065f46;
+            border: 2px solid #10b981;
+        }
+        
+        .room-selector.occupied {
+            background-color: #fef3c7;
+            color: #92400e;
+            border: 2px solid #f59e0b;
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .sidebar {
+            transition: transform 0.3s ease;
+        }
+        
+        @media (max-width: 768px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+            
+            .sidebar.active {
+                transform: translateX(0);
+            }
+        }
+        
+        .step-indicator {
+            position: relative;
+        }
+        
+        .step-indicator::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 100%;
+            width: 100px;
+            height: 2px;
+            background: #e5e7eb;
+            transform: translateY(-50%);
+        }
+        
+        .step-indicator.active::after {
+            background: #3b82f6;
+        }
+        
+        .step-indicator:last-child::after {
+            display: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- 侧边导航 -->
+    <div class="sidebar fixed left-0 top-0 w-64 h-full bg-white shadow-lg z-40" id="sidebar">
+        <div class="p-6 border-b">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold text-gray-900">酒店管理系统</h1>
+                    <p class="text-xs text-gray-500">PMS v1.0</p>
+                </div>
+            </div>
+        </div>
+        
+        <nav class="p-4 space-y-2">
+            <a href="index.html" class="flex items-center space-x-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5a2 2 0 012-2h4a2 2 0 012 2v6H8V5z"></path>
+                </svg>
+                <span>主控制台</span>
+            </a>
+            <a href="checkin.html" class="flex items-center space-x-3 px-4 py-3 bg-blue-50 text-blue-700 rounded-lg font-medium">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path>
+                </svg>
+                <span>入住登记</span>
+            </a>
+            <a href="rooms.html" class="flex items-center space-x-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+                </svg>
+                <span>房态管理</span>
+            </a>
+            <a href="guests.html" class="flex items-center space-x-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
+                </svg>
+                <span>客人管理</span>
+            </a>
+            <a href="reports.html" class="flex items-center space-x-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                </svg>
+                <span>财务报表</span>
+            </a>
+        </nav>
+        
+        <div class="absolute bottom-0 left-0 right-0 p-4 border-t">
+            <div class="text-xs text-gray-500 text-center">
+                <p id="currentTime"></p>
+                <p class="mt-1">共98间房</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 主内容区 -->
+    <div class="ml-64 min-h-screen" id="mainContent">
+        <!-- 顶部导航 -->
+        <header class="bg-white shadow-sm border-b">
+            <div class="px-6 py-4 flex items-center justify-between">
+                <div class="flex items-center space-x-4">
+                    <button class="md:hidden p-2 hover:bg-gray-100 rounded-lg" onclick="toggleSidebar()">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                        </svg>
+                    </button>
+                    <h2 class="text-2xl font-bold text-gray-900">入住登记</h2>
+                </div>
+                
+                <div class="flex items-center space-x-3">
+                    <button onclick="resetForm()" class="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">
+                        重置表单
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <div class="p-6">
+            <!-- 步骤指示器 -->
+            <div class="flex items-center justify-center mb-8">
+                <div class="flex items-center space-x-8">
+                    <div class="step-indicator flex items-center space-x-2 text-blue-600 font-medium">
+                        <div class="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold">1</div>
+                        <span>选择房间</span>
+                    </div>
+                    <div class="step-indicator flex items-center space-x-2 text-gray-400">
+                        <div class="w-8 h-8 bg-gray-200 text-gray-600 rounded-full flex items-center justify-center text-sm font-bold">2</div>
+                        <span>客人信息</span>
+                    </div>
+                    <div class="step-indicator flex items-center space-x-2 text-gray-400">
+                        <div class="w-8 h-8 bg-gray-200 text-gray-600 rounded-full flex items-center justify-center text-sm font-bold">3</div>
+                        <span>确认入住</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <!-- 房间选择 -->
+                <div class="lg:col-span-2">
+                    <div class="bg-white rounded-xl shadow-sm p-6">
+                        <div class="flex items-center justify-between mb-6">
+                            <h3 class="text-lg font-semibold text-gray-900">选择房间</h3>
+                            <div class="flex items-center space-x-3">
+                                <div class="flex items-center space-x-2">
+                                    <div class="w-4 h-4 bg-green-100 border-2 border-green-500 rounded"></div>
+                                    <span class="text-sm text-gray-600">可入住</span>
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <div class="w-4 h-4 bg-yellow-100 border-2 border-yellow-500 rounded opacity-50"></div>
+                                    <span class="text-sm text-gray-600">已入住</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">按房型筛选</label>
+                            <select id="roomTypeFilter" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" onchange="filterRoomsByType()">
+                                <option value="">全部房型</option>
+                            </select>
+                        </div>
+                        
+                        <div id="roomsSelectionGrid" class="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 max-h-96 overflow-y-auto">
+                            <!-- 房间选择卡片将在这里生成 -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 客人信息表单 -->
+                <div class="bg-white rounded-xl shadow-sm p-6">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-6">客人信息</h3>
+                    
+                    <form id="checkinForm" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">姓名 *</label>
+                            <input type="text" id="guestName" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="请输入客人姓名">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">手机号 *</label>
+                            <input type="tel" id="guestPhone" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="请输入手机号码">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">身份证号</label>
+                            <input type="text" id="guestIdCard" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="请输入身份证号">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">入住人数</label>
+                            <select id="guestCount" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                <option value="1">1人</option>
+                                <option value="2">2人</option>
+                                <option value="3">3人</option>
+                                <option value="4">4人</option>
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">入住日期 *</label>
+                            <input type="date" id="checkinDate" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">退房日期 *</label>
+                            <input type="date" id="checkoutDate" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">房价(元/晚)</label>
+                            <input type="number" id="roomRate" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="默认房价">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">押金(元)</label>
+                            <input type="number" id="deposit" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="0">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">备注</label>
+                            <textarea id="notes" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="特殊要求或备注信息"></textarea>
+                        </div>
+                        
+                        <button type="submit" class="w-full px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium flex items-center justify-center space-x-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                            </svg>
+                            <span>确认入住</span>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 入住确认模态框 -->
+    <div id="confirmCheckinModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+        <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg mx-4">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-xl font-semibold text-gray-900">确认入住信息</h3>
+                <button onclick="closeConfirmModal()" class="text-gray-400 hover:text-gray-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            
+            <div id="confirmInfo" class="space-y-3 text-sm">
+                <!-- 确认信息将在这里显示 -->
+            </div>
+            
+            <div class="flex space-x-3 mt-6">
+                <button onclick="closeConfirmModal()" class="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">
+                    返回修改
+                </button>
+                <button onclick="submitCheckin()" class="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
+                    确认入住
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="main.js"></script>
+    <script>
+        // 页面特定的JavaScript代码
+        let selectedRoom = null;
+        let selectedRoomType = null;
+        
+        // 初始化页面
+        document.addEventListener('DOMContentLoaded', async function() {
+            await initializeCheckinPage();
+            setDefaultDates();
+        });
+        
+        async function initializeCheckinPage() {
+            await loadRoomsForSelection();
+            await populateRoomTypeFilter();
+        }
+        
+        function setDefaultDates() {
+            const today = new Date();
+            const tomorrow = new Date(today);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            
+            document.getElementById('checkinDate').value = today.toISOString().split('T')[0];
+            document.getElementById('checkoutDate').value = tomorrow.toISOString().split('T')[0];
+        }
+        
+        async function loadRoomsForSelection() {
+            const roomsGrid = document.getElementById('roomsSelectionGrid');
+            roomsGrid.innerHTML = '';
+            
+            try {
+                const rooms = await getAllRooms();
+                
+                rooms.forEach(room => {
+                    const roomCard = document.createElement('div');
+                    roomCard.className = `room-selector p-3 rounded-lg border-2 cursor-pointer text-center font-medium ${room.status}`;
+                    roomCard.onclick = () => selectRoom(room);
+                    
+                    roomCard.innerHTML = `
+                        <div class="text-lg font-bold">${room.number}</div>
+                        <div class="text-xs mt-1">${room.type}</div>
+                    `;
+                    
+                    roomsGrid.appendChild(roomCard);
+                });
+            } catch (error) {
+                console.error('加载房间列表失败:', error);
+            }
+        }
+        
+        function selectRoom(room) {
+            if (room.status === 'occupied') {
+                alert('该房间已被占用，请选择其他房间');
+                return;
+            }
+            
+            // 移除之前的选中状态
+            document.querySelectorAll('.room-selector').forEach(el => {
+                el.classList.remove('selected');
+            });
+            
+            // 添加选中状态
+            event.target.closest('.room-selector').classList.add('selected');
+            
+            selectedRoom = room;
+            selectedRoomType = room.type;
+            
+            // 自动设置房价
+            const defaultRate = getDefaultRoomRate(room.type);
+            document.getElementById('roomRate').value = defaultRate;
+        }
+        
+        async function populateRoomTypeFilter() {
+            const filter = document.getElementById('roomTypeFilter');
+            const roomTypes = getRoomTypes();
+            
+            roomTypes.forEach(type => {
+                const option = document.createElement('option');
+                option.value = type;
+                option.textContent = type;
+                filter.appendChild(option);
+            });
+        }
+        
+        function filterRoomsByType() {
+            const selectedType = document.getElementById('roomTypeFilter').value;
+            const roomCards = document.querySelectorAll('.room-selector');
+            
+            roomCards.forEach(card => {
+                const roomType = card.querySelector('.text-xs').textContent;
+                if (!selectedType || roomType === selectedType) {
+                    card.style.display = 'block';
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+        }
+        
+        // 表单提交处理
+        document.getElementById('checkinForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            if (!selectedRoom) {
+                alert('请先选择房间');
+                return;
+            }
+            
+            const formData = {
+                guestName: document.getElementById('guestName').value,
+                guestPhone: document.getElementById('guestPhone').value,
+                guestIdCard: document.getElementById('guestIdCard').value,
+                guestCount: document.getElementById('guestCount').value,
+                checkinDate: document.getElementById('checkinDate').value,
+                checkoutDate: document.getElementById('checkoutDate').value,
+                roomRate: document.getElementById('roomRate').value,
+                deposit: document.getElementById('deposit').value || 0,
+                notes: document.getElementById('notes').value
+            };
+            
+            // 验证必填字段
+            if (!formData.guestName || !formData.guestPhone || !formData.checkinDate || !formData.checkoutDate) {
+                alert('请填写所有必填字段');
+                return;
+            }
+            
+            showConfirmModal(formData);
+        });
+        
+        function showConfirmModal(formData) {
+            const confirmInfo = document.getElementById('confirmInfo');
+            const nights = calculateNights(formData.checkinDate, formData.checkoutDate);
+            const totalAmount = nights * formData.roomRate;
+            
+            confirmInfo.innerHTML = `
+                <div class="bg-blue-50 rounded-lg p-4 mb-4">
+                    <h4 class="font-medium text-blue-900 mb-2">房间信息</h4>
+                    <p><span class="text-gray-600">房间号:</span> ${selectedRoom.number}</p>
+                    <p><span class="text-gray-600">房型:</span> ${selectedRoomType}</p>
+                </div>
+                
+                <div class="bg-gray-50 rounded-lg p-4 mb-4">
+                    <h4 class="font-medium text-gray-900 mb-2">客人信息</h4>
+                    <p><span class="text-gray-600">姓名:</span> ${formData.guestName}</p>
+                    <p><span class="text-gray-600">手机:</span> ${formData.guestPhone}</p>
+                    <p><span class="text-gray-600">入住人数:</span> ${formData.guestCount}人</p>
+                </div>
+                
+                <div class="bg-green-50 rounded-lg p-4">
+                    <h4 class="font-medium text-green-900 mb-2">费用信息</h4>
+                    <p><span class="text-gray-600">入住日期:</span> ${formData.checkinDate}</p>
+                    <p><span class="text-gray-600">退房日期:</span> ${formData.checkoutDate}</p>
+                    <p><span class="text-gray-600">入住天数:</span> ${nights}晚</p>
+                    <p><span class="text-gray-600">房价:</span> ¥${formData.roomRate}/晚</p>
+                    <p><span class="text-gray-600">押金:</span> ¥${formData.deposit}</p>
+                    <p class="font-bold text-lg mt-2 pt-2 border-t border-green-200">
+                        <span class="text-gray-700">总计:</span> ¥${totalAmount}
+                    </p>
+                </div>
+            `;
+            
+            document.getElementById('confirmCheckinModal').classList.remove('hidden');
+            document.getElementById('confirmCheckinModal').classList.add('flex');
+        }
+        
+        function closeConfirmModal() {
+            document.getElementById('confirmCheckinModal').classList.add('hidden');
+            document.getElementById('confirmCheckinModal').classList.remove('flex');
+        }
+        
+        async function submitCheckin() {
+            const formData = {
+                guestName: document.getElementById('guestName').value,
+                guestPhone: document.getElementById('guestPhone').value,
+                guestIdCard: document.getElementById('guestIdCard').value,
+                guestCount: parseInt(document.getElementById('guestCount').value),
+                checkinDate: document.getElementById('checkinDate').value,
+                checkoutDate: document.getElementById('checkoutDate').value,
+                roomRate: parseFloat(document.getElementById('roomRate').value),
+                deposit: parseFloat(document.getElementById('deposit').value) || 0,
+                notes: document.getElementById('notes').value,
+                roomNumber: selectedRoom.number,
+                roomType: selectedRoomType,
+                checkinTime: new Date().toISOString()
+            };
+            
+            try {
+                // 保存入住记录
+                await saveCheckinRecord(formData);
+                
+                // 更新房间状态
+                await updateRoomStatus(selectedRoom.number, 'occupied');
+                
+                // 关闭模态框
+                closeConfirmModal();
+                
+                // 显示成功消息
+                alert('入住登记成功！');
+                
+                // 重置表单
+                resetForm();
+                
+                // 刷新房间选择
+                await loadRoomsForSelection();
+            } catch (error) {
+                alert('入住登记失败：' + error.message);
+            }
+        }
+        
+        function calculateNights(checkin, checkout) {
+            const checkinDate = new Date(checkin);
+            const checkoutDate = new Date(checkout);
+            const diffTime = checkoutDate - checkinDate;
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            return diffDays > 0 ? diffDays : 1;
+        }
+        
+        function resetForm() {
+            document.getElementById('checkinForm').reset();
+            setDefaultDates();
+            selectedRoom = null;
+            selectedRoomType = null;
+            
+            // 清除房间选择
+            document.querySelectorAll('.room-selector').forEach(el => {
+                el.classList.remove('selected');
+            });
+        }
+        
+        function getStatusText(status) {
+            const statusMap = {
+                'vacant': '可入住',
+                'occupied': '已入住',
+                'cleaning': '清扫中',
+                'maintenance': '维修中'
+            };
+            return statusMap[status] || status;
+        }
+    </script>
+</body>
+</html>
