@@ -334,421 +334,547 @@
 
     <script src="main.js"></script>
     <script>
+        // ========== 全局配置（对齐checkin逻辑） ==========
+        // LeanCloud初始化（替换为你的AppID和AppKey）
+        AV.init({
+            appId: "你的LeanCloud AppID",
+            appKey: "你的LeanCloud AppKey",
+            serverURL: "你的LeanCloud 服务器地址"
+        });
+        const Guest = AV.Object.extend('Guest'); // 客人数据表
+        const Room = AV.Object.extend('Room');   // 房间数据表
+        
         let currentGuest = null;
         let currentTab = 'current';
+        let allGuests = []; // 缓存所有客人数据
         
-        // 页面初始化
+        // ========== 页面初始化 ==========
         document.addEventListener('DOMContentLoaded', async function() {
+            // 初始化时间显示
+            updateCurrentTime();
+            setInterval(updateCurrentTime, 1000);
+            
             await initializeGuestsPage();
         });
         
+        // 初始化客人页面
         async function initializeGuestsPage() {
-            await loadCurrentGuests();
-            await loadGuestStatistics();
+            await loadAllGuests(); // 加载所有客人数据
+            await loadCurrentGuests(); // 渲染在住客人
+            await loadGuestStatistics(); // 更新统计数据
         }
         
-        async function switchTab(tab) {
-            currentTab = tab;
-            
-            // 更新标签按钮状态
-            document.getElementById('currentTab').classList.remove('active');
-            document.getElementById('historyTab').classList.remove('active');
-            
-            if (tab === 'current') {
-                document.getElementById('currentTab').classList.add('active', 'border-blue-500', 'text-blue-600');
-                document.getElementById('historyTab').classList.add('border-gray-200', 'text-gray-500');
-                document.getElementById('currentGuestsTab').classList.remove('hidden');
-                document.getElementById('historyGuestsTab').classList.add('hidden');
-                await loadCurrentGuests();
-            } else {
-                document.getElementById('historyTab').classList.add('active', 'border-blue-500', 'text-blue-600');
-                document.getElementById('currentTab').classList.add('border-gray-200', 'text-gray-500');
-                document.getElementById('currentGuestsTab').classList.add('hidden');
-                document.getElementById('historyGuestsTab').classList.remove('hidden');
-                await loadHistoryGuests();
-            }
+        // ========== 基础工具函数（对齐checkin） ==========
+        // 切换侧边栏
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('active');
         }
         
-        async function loadCurrentGuests() {
+        // 打开模态框
+        function openModal(modalId) {
+            document.getElementById(modalId).classList.add('active');
+        }
+        
+        // 关闭模态框
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('active');
+        }
+        
+        // 更新当前时间
+        function updateCurrentTime() {
+            const now = new Date();
+            document.getElementById('currentTime').textContent = now.toLocaleString('zh-CN', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+        }
+        
+        // 格式化日期（统一格式）
+        function formatDate(date) {
+            if (!date) return '-';
+            return new Date(date).toLocaleString('zh-CN', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+        
+        // ========== 数据加载逻辑 ==========
+        // 加载所有客人数据
+        async function loadAllGuests() {
             try {
-                const guests = await getCurrentGuests();
-                const container = document.getElementById('currentGuestsList');
-                container.innerHTML = '';
-                
-                document.getElementById('currentGuestsResultCount').textContent = guests.length;
-                
-                if (guests.length === 0) {
-                    container.innerHTML = `
-                        <div class="col-span-full text-center py-12">
-                            <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
-                            </svg>
-                            <h3 class="mt-2 text-sm font-medium text-gray-900">暂无在住客人</h3>
-                            <p class="mt-1 text-sm text-gray-500">当前没有客人入住记录</p>
-                        </div>
-                    `;
-                    return;
-                }
-                
-                guests.forEach(guest => {
-                    const nights = calculateNights(guest.checkinDate, guest.checkoutDate);
-                    const totalAmount = nights * guest.roomRate;
-                    
-                    const guestCard = document.createElement('div');
-                    guestCard.className = 'guest-card bg-white rounded-lg shadow-sm border p-4 cursor-pointer hover:shadow-md transition-shadow';
-                    guestCard.onclick = () => showGuestDetail(guest);
-                    
-                    guestCard.innerHTML = `
-                        <div class="flex items-center justify-between mb-3">
-                            <h4 class="text-lg font-semibold text-gray-900">${guest.guestName}</h4>
-                            <span class="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-medium">在住</span>
-                        </div>
-                        
-                        <div class="space-y-2 text-sm">
-                            <div class="flex items-center space-x-2">
-                                <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path>
-                                </svg>
-                                <span class="text-gray-600">${guest.guestPhone}</span>
-                            </div>
-                            
-                            <div class="flex items-center space-x-2">
-                                <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
-                                </svg>
-                                <span class="text-gray-600">${guest.roomNumber} - ${guest.roomType}</span>
-                            </div>
-                            
-                            <div class="flex items-center space-x-2">
-                                <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-                                </svg>
-                                <span class="text-gray-600">${new Date(guest.checkinDate).toLocaleDateString()} - ${new Date(guest.checkoutDate).toLocaleDateString()}</span>
-                            </div>
-                            
-                            <div class="flex items-center justify-between pt-2 border-t">
-                                <span class="text-gray-600">入住${nights}晚</span>
-                                <span class="font-semibold text-green-600">¥${totalAmount}</span>
-                            </div>
-                        </div>
-                    `;
-                    
-                    container.appendChild(guestCard);
-                });
+                const query = new AV.Query(Guest);
+                query.descending('createdAt'); // 按创建时间倒序
+                allGuests = await query.find();
             } catch (error) {
-                console.error('加载在住客人失败:', error);
+                console.error('加载客人数据失败:', error);
+                alert('加载客人数据失败，请重试');
             }
         }
         
-        async function loadHistoryGuests() {
+        // 加载在住客人
+        async function loadCurrentGuests(searchKeyword = '') {
             try {
-                const guests = await getHistoryGuests();
-                const tbody = document.getElementById('historyGuestsTable');
-                tbody.innerHTML = '';
-                
-                document.getElementById('historyGuestsResultCount').textContent = guests.length;
-                
-                if (guests.length === 0) {
-                    tbody.innerHTML = `
-                        <tr>
-                            <td colspan="6" class="px-6 py-12 text-center text-gray-500">
-                                <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
-                                </svg>
-                                <h3 class="mt-2 text-sm font-medium text-gray-900">暂无历史记录</h3>
-                                <p class="mt-1 text-sm text-gray-500">暂无历史入住记录</p>
-                            </td>
-                        </tr>
-                    `;
-                    return;
-                }
-                
-                guests.forEach(guest => {
-                    const nights = calculateNights(guest.checkinDate, guest.checkoutDate);
-                    const totalAmount = nights * guest.roomRate;
-                    
-                    const row = document.createElement('tr');
-                    row.className = 'hover:bg-gray-50';
-                    
-                    row.innerHTML = `
-                        <td class="px-6 py-4 whitespace-nowrap">
-                            <div class="text-sm font-medium text-gray-900">${guest.guestName}</div>
-                            <div class="text-sm text-gray-500">${guest.guestPhone}</div>
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap">
-                            <div class="text-sm text-gray-900">${guest.roomNumber}</div>
-                            <div class="text-sm text-gray-500">${guest.roomType}</div>
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            ${new Date(guest.checkinDate).toLocaleDateString()}
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            ${new Date(guest.checkoutDate).toLocaleDateString()}
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            ¥${totalAmount}
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                            <button onclick="showGuestDetail('${guest.id}')" class="text-blue-600 hover:text-blue-900 mr-3">查看</button>
-                            <button onclick="rebookGuest('${guest.id}')" class="text-green-600 hover:text-green-900">重新入住</button>
-                        </td>
-                    `;
-                    
-                    tbody.appendChild(row);
+                // 筛选在住客人（checkoutTime为空/未退房）
+                let currentGuests = allGuests.filter(guest => {
+                    const isCheckedOut = guest.get('checkoutTime');
+                    const matchesSearch = !searchKeyword || 
+                        (guest.get('name')?.includes(searchKeyword) || 
+                        guest.get('roomNumber')?.includes(searchKeyword));
+                    return !isCheckedOut && matchesSearch;
                 });
-            } catch (error) {
-                console.error('加载历史记录失败:', error);
-            }
-        }
-        
-        async function showGuestDetail(guest) {
-            try {
-                if (typeof guest === 'string') {
-                    guest = await getGuestById(guest);
-                }
                 
-                if (!guest) {
-                    alert('未找到客人信息');
+                // 渲染在住客人卡片
+                const listEl = document.getElementById('currentGuestsList');
+                listEl.innerHTML = '';
+                
+                if (currentGuests.length === 0) {
+                    listEl.innerHTML = `
+                        <div class="col-span-full text-center py-12 text-gray-500">
+                            <p>暂无在住客人</p>
+                        </div>
+                    `;
+                    document.getElementById('currentGuestsResultCount').textContent = 0;
                     return;
                 }
                 
-                currentGuest = guest;
-                const nights = calculateNights(guest.checkinDate, guest.checkoutDate);
-                const totalAmount = nights * guest.roomRate;
-                
-                const detailContent = document.getElementById('guestDetailContent');
-                detailContent.innerHTML = `
-                    <div class="space-y-4">
-                        <div class="bg-blue-50 rounded-lg p-4">
-                            <h4 class="text-lg font-semibold text-blue-900 mb-3">客人信息</h4>
-                            <div class="grid grid-cols-2 gap-4 text-sm">
-                                <div>
-                                    <p class="text-gray-600">姓名</p>
-                                    <p class="font-medium text-blue-900">${guest.guestName}</p>
+                // 生成客人卡片
+                currentGuests.forEach(guest => {
+                    const guestCard = `
+                        <div class="guest-card bg-white rounded-xl shadow-sm border border-gray-100 p-6 cursor-pointer" onclick="showGuestDetail('${guest.id}')">
+                            <div class="flex items-start justify-between mb-4">
+                                <div class="flex items-center space-x-3">
+                                    <div class="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold">
+                                        ${guest.get('name')?.charAt(0) || '客'}
+                                    </div>
+                                    <div>
+                                        <h3 class="font-semibold text-lg text-gray-900">${guest.get('name') || '未知'}</h3>
+                                        <p class="text-sm text-gray-500">房间 ${guest.get('roomNumber') || '未知'}</p>
+                                    </div>
                                 </div>
-                                <div>
-                                    <p class="text-gray-600">手机号</p>
-                                    <p class="font-medium text-blue-900">${guest.guestPhone}</p>
-                                </div>
-                                <div>
-                                    <p class="text-gray-600">身份证号</p>
-                                    <p class="font-medium text-blue-900">${guest.guestIdCard || '未登记'}</p>
-                                </div>
-                                <div>
-                                    <p class="text-gray-600">入住人数</p>
-                                    <p class="font-medium text-blue-900">${guest.guestCount}人</p>
-                                </div>
+                                <span class="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">在住</span>
                             </div>
-                        </div>
-                        
-                        <div class="bg-green-50 rounded-lg p-4">
-                            <h4 class="text-lg font-semibold text-green-900 mb-3">房间信息</h4>
-                            <div class="grid grid-cols-2 gap-4 text-sm">
-                                <div>
-                                    <p class="text-gray-600">房间号</p>
-                                    <p class="font-medium text-green-900">${guest.roomNumber}</p>
-                                </div>
-                                <div>
-                                    <p class="text-gray-600">房型</p>
-                                    <p class="font-medium text-green-900">${guest.roomType}</p>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="bg-yellow-50 rounded-lg p-4">
-                            <h4 class="text-lg font-semibold text-yellow-900 mb-3">费用信息</h4>
+                            
                             <div class="space-y-2 text-sm">
                                 <div class="flex justify-between">
-                                    <span class="text-gray-600">入住日期:</span>
-                                    <span class="font-medium">${new Date(guest.checkinDate).toLocaleDateString()}</span>
+                                    <span class="text-gray-500">身份证号：</span>
+                                    <span class="text-gray-700">${guest.get('idCard') || '未填写'}</span>
                                 </div>
                                 <div class="flex justify-between">
-                                    <span class="text-gray-600">退房日期:</span>
-                                    <span class="font-medium">${new Date(guest.checkoutDate).toLocaleDateString()}</span>
+                                    <span class="text-gray-500">联系电话：</span>
+                                    <span class="text-gray-700">${guest.get('phone') || '未填写'}</span>
                                 </div>
                                 <div class="flex justify-between">
-                                    <span class="text-gray-600">入住天数:</span>
-                                    <span class="font-medium">${nights}晚</span>
+                                    <span class="text-gray-500">入住时间：</span>
+                                    <span class="text-gray-700">${formatDate(guest.get('checkinTime'))}</span>
                                 </div>
                                 <div class="flex justify-between">
-                                    <span class="text-gray-600">房价:</span>
-                                    <span class="font-medium">¥${guest.roomRate}/晚</span>
-                                </div>
-                                <div class="flex justify-between">
-                                    <span class="text-gray-600">押金:</span>
-                                    <span class="font-medium">¥${guest.deposit}</span>
-                                </div>
-                                <div class="flex justify-between pt-2 border-t border-yellow-200">
-                                    <span class="text-gray-700 font-medium">总计:</span>
-                                    <span class="font-bold text-lg text-yellow-900">¥${totalAmount}</span>
+                                    <span class="text-gray-500">预计退房：</span>
+                                    <span class="text-gray-700">${formatDate(guest.get('expectedCheckoutTime'))}</span>
                                 </div>
                             </div>
                         </div>
-                        
-                        ${guest.notes ? `
-                            <div class="bg-gray-50 rounded-lg p-4">
-                                <h4 class="text-lg font-semibold text-gray-900 mb-2">备注</h4>
-                                <p class="text-sm text-gray-700">${guest.notes}</p>
-                            </div>
-                        ` : ''}
-                    </div>
-                `;
+                    `;
+                    listEl.innerHTML += guestCard;
+                });
                 
-                document.getElementById('guestDetailModal').classList.add('active');
+                // 更新计数
+                document.getElementById('currentGuestsResultCount').textContent = currentGuests.length;
             } catch (error) {
-                console.error('显示客人详情失败:', error);
-                alert('加载客人详情失败');
+                console.error('加载在住客人失败:', error);
+                alert('加载在住客人失败，请重试');
             }
         }
         
-        function showCheckoutModal() {
-            closeModal('guestDetailModal');
-            
-            const nights = calculateNights(currentGuest.checkinDate, currentGuest.checkoutDate);
-            const totalAmount = nights * currentGuest.roomRate;
-            
-            const checkoutContent = document.getElementById('checkoutContent');
-            checkoutContent.innerHTML = `
-                <div class="bg-orange-50 rounded-lg p-4">
-                    <h4 class="font-medium text-orange-900 mb-3">退房确认</h4>
-                    <div class="space-y-2 text-sm">
-                        <p><span class="text-gray-600">客人:</span> ${currentGuest.guestName}</p>
-                        <p><span class="text-gray-600">房间:</span> ${currentGuest.roomNumber} - ${currentGuest.roomType}</p>
-                        <p><span class="text-gray-600">入住:</span> ${new Date(currentGuest.checkinDate).toLocaleDateString()}</p>
-                        <p><span class="text-gray-600">退房:</span> ${new Date(currentGuest.checkoutDate).toLocaleDateString()}</p>
-                        <p><span class="text-gray-600">天数:</span> ${nights}晚</p>
-                        <p><span class="text-gray-600">房费:</span> ¥${totalAmount}</p>
-                        <p><span class="text-gray-600">押金:</span> ¥${currentGuest.deposit}</p>
-                        <p class="font-bold text-lg pt-2 border-t border-orange-200">
-                            <span class="text-orange-900">应退金额:</span> ¥${currentGuest.deposit}
-                        </p>
-                    </div>
-                </div>
-                
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">退房备注</label>
-                    <textarea id="checkoutNote" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="退房备注信息"></textarea>
-                </div>
-            `;
-            
-            document.getElementById('checkoutModal').classList.add('active');
-        }
-        
-        async function processGuestCheckout() {
-            const checkoutNote = document.getElementById('checkoutNote').value;
-            
-            try {
-                // 处理退房
-                await processCheckout(currentGuest.id, checkoutNote);
-                
-                // 更新房间状态
-                await updateRoomStatus(currentGuest.roomNumber, 'cleaning');
-                
-                closeModal('checkoutModal');
-                
-                alert('退房办理成功！');
-                
-                // 刷新数据
-                await loadCurrentGuests();
-                await loadGuestStatistics();
-            } catch (error) {
-                alert('退房失败：' + error.message);
-            }
-        }
-        
-        function searchCurrentGuests() {
-            const searchTerm = document.getElementById('currentGuestSearch').value.toLowerCase();
-            const cards = document.querySelectorAll('.guest-card');
-            
-            let count = 0;
-            cards.forEach(card => {
-                const text = card.textContent.toLowerCase();
-                if (text.includes(searchTerm)) {
-                    card.style.display = 'block';
-                    count++;
-                } else {
-                    card.style.display = 'none';
-                }
-            });
-            
-            document.getElementById('currentGuestsResultCount').textContent = count;
-        }
-        
-        async function searchHistoryGuests() {
-            await loadHistoryGuests(); // 简化处理，实际应该根据搜索条件过滤
-        }
-        
+        // 加载客人统计数据
         async function loadGuestStatistics() {
             try {
-                const stats = await getGuestStatistics();
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const tomorrow = new Date(today);
+                tomorrow.setDate(tomorrow.getDate() + 1);
                 
-                document.getElementById('currentGuestsCount').textContent = stats.currentGuests;
-                document.getElementById('todayCheckinsCount').textContent = stats.todayCheckins;
-                document.getElementById('todayCheckoutsCount').textContent = stats.todayCheckouts;
-                document.getElementById('totalGuestsCount').textContent = stats.totalGuests;
+                // 统计在住客人
+                const currentCount = allGuests.filter(guest => !guest.get('checkoutTime')).length;
+                // 统计今日入住
+                const todayCheckinCount = allGuests.filter(guest => {
+                    const checkinTime = new Date(guest.get('checkinTime'));
+                    return checkinTime >= today && checkinTime < tomorrow && !guest.get('checkoutTime');
+                }).length;
+                // 统计今日退房
+                const todayCheckoutCount = allGuests.filter(guest => {
+                    const checkoutTime = new Date(guest.get('checkoutTime'));
+                    return checkoutTime >= today && checkoutTime < tomorrow;
+                }).length;
+                // 总客人数
+                const totalCount = allGuests.length;
+                
+                // 更新DOM
+                document.getElementById('currentGuestsCount').textContent = currentCount;
+                document.getElementById('todayCheckinsCount').textContent = todayCheckinCount;
+                document.getElementById('todayCheckoutsCount').textContent = todayCheckoutCount;
+                document.getElementById('totalGuestsCount').textContent = totalCount;
             } catch (error) {
                 console.error('加载统计数据失败:', error);
             }
         }
         
-        function rebookGuest(guestId) {
-            if (confirm('是否要为该客人办理重新入住？')) {
-                // 获取客人信息并跳转到入住登记页面
-                getGuestById(guestId).then(guest => {
-                    if (guest) {
-                        // 将客人信息存储到sessionStorage，以便在checkin.html页面使用
-                        sessionStorage.setItem('rebookGuest', JSON.stringify(guest));
-                        window.location.href = 'checkin.html';
-                    }
-                }).catch(error => {
-                    alert('获取客人信息失败：' + error.message);
-                });
+        // ========== 标签页切换 ==========
+        async function switchTab(tab) {
+            currentTab = tab;
+            
+            // 更新标签按钮状态
+            document.getElementById('currentTab').classList.remove('active', 'border-blue-500', 'text-blue-600');
+            document.getElementById('historyTab').classList.remove('active', 'border-blue-500', 'text-blue-600');
+            document.getElementById('currentTab').classList.add('border-transparent', 'text-gray-500');
+            document.getElementById('historyTab').classList.add('border-transparent', 'text-gray-500');
+            
+            // 切换内容显示
+            if (tab === 'current') {
+                document.getElementById('currentTab').classList.add('active', 'border-blue-500', 'text-blue-600');
+                document.getElementById('currentGuestsTab').classList.remove('hidden');
+                document.getElementById('historyGuestsTab').classList.add('hidden');
+                await loadCurrentGuests(); // 重新加载在住客人
+            } else {
+                document.getElementById('historyTab').classList.add('active', 'border-blue-500', 'text-blue-600');
+                document.getElementById('currentGuestsTab').classList.add('hidden');
+                document.getElementById('historyGuestsTab').classList.remove('hidden');
+                await loadHistoryGuests(); // 加载历史记录
             }
         }
         
-        async function exportGuestData() {
+        // ========== 搜索逻辑 ==========
+        // 搜索在住客人
+        function searchCurrentGuests() {
+            const keyword = document.getElementById('currentGuestSearch').value.trim();
+            loadCurrentGuests(keyword);
+        }
+        
+        // 加载历史客人记录
+        async function loadHistoryGuests(searchKeyword = '', filterDate = '') {
             try {
-                const currentGuests = await getCurrentGuests();
-                const historyGuests = await getHistoryGuests();
-                
-                let csvContent = "姓名,手机号,房间号,房型,入住日期,退房日期,入住天数,房费,押金,状态\n";
-                
-                // 添加在住客人数据
-                currentGuests.forEach(guest => {
-                    const nights = calculateNights(guest.checkinDate, guest.checkoutDate);
-                    csvContent += `${guest.guestName},${guest.guestPhone},${guest.roomNumber},${guest.roomType},${guest.checkinDate},${guest.checkoutDate},${nights},${guest.roomRate},${guest.deposit},在住\n`;
+                // 筛选已退房客人
+                let historyGuests = allGuests.filter(guest => {
+                    const isCheckedOut = guest.get('checkoutTime');
+                    const matchesSearch = !searchKeyword || 
+                        (guest.get('name')?.includes(searchKeyword) || 
+                        guest.get('roomNumber')?.includes(searchKeyword));
+                    const matchesDate = !filterDate || (() => {
+                        const checkoutDate = new Date(guest.get('checkoutTime'));
+                        const filterDateObj = new Date(filterDate);
+                        return checkoutDate.getFullYear() === filterDateObj.getFullYear() &&
+                               checkoutDate.getMonth() === filterDateObj.getMonth() &&
+                               checkoutDate.getDate() === filterDateObj.getDate();
+                    })();
+                    return isCheckedOut && matchesSearch && matchesDate;
                 });
                 
-                // 添加历史客人数据
+                // 渲染历史表格
+                const tableEl = document.getElementById('historyGuestsTable');
+                tableEl.innerHTML = '';
+                
+                if (historyGuests.length === 0) {
+                    tableEl.innerHTML = `
+                        <tr>
+                            <td colspan="6" class="px-6 py-12 text-center text-gray-500">
+                                暂无历史记录
+                            </td>
+                        </tr>
+                    `;
+                    document.getElementById('historyGuestsResultCount').textContent = 0;
+                    return;
+                }
+                
+                // 生成表格行
                 historyGuests.forEach(guest => {
-                    const nights = calculateNights(guest.checkinDate, guest.checkoutDate);
-                    csvContent += `${guest.guestName},${guest.guestPhone},${guest.roomNumber},${guest.roomType},${guest.checkinDate},${guest.checkoutDate},${nights},${guest.roomRate},${guest.deposit},已退房\n`;
+                    const tr = `
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <div class="text-sm font-medium text-gray-900">${guest.get('name') || '未知'}</div>
+                                <div class="text-sm text-gray-500">${guest.get('idCard') || '未填写'}</div>
+                                <div class="text-sm text-gray-500">${guest.get('phone') || '未填写'}</div>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <div class="text-sm text-gray-900">${guest.get('roomNumber') || '未知'}</div>
+                                <div class="text-sm text-gray-500">${guest.get('roomType') || '未知'}</div>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                ${formatDate(guest.get('checkinTime'))}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                ${formatDate(guest.get('checkoutTime'))}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <div class="text-sm font-medium text-gray-900">¥${guest.get('totalFee') || 0}</div>
+                                <div class="text-sm text-gray-500">押金 ¥${guest.get('deposit') || 0}</div>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                <button onclick="showGuestDetail('${guest.id}')" class="text-blue-600 hover:text-blue-900">查看详情</button>
+                            </td>
+                        </tr>
+                    `;
+                    tableEl.innerHTML += tr;
                 });
                 
+                // 更新计数
+                document.getElementById('historyGuestsResultCount').textContent = historyGuests.length;
+            } catch (error) {
+                console.error('加载历史记录失败:', error);
+                alert('加载历史记录失败，请重试');
+            }
+        }
+        
+        // 搜索历史客人
+        function searchHistoryGuests() {
+            const keyword = document.getElementById('historyGuestSearch').value.trim();
+            const filterDate = document.getElementById('historyDateFilter').value;
+            loadHistoryGuests(keyword, filterDate);
+        }
+        
+        // ========== 客人详情 & 退房逻辑 ==========
+        // 显示客人详情
+        async function showGuestDetail(guestId) {
+            try {
+                // 查找客人数据
+                const guest = allGuests.find(g => g.id === guestId);
+                if (!guest) {
+                    alert('客人数据不存在');
+                    return;
+                }
+                currentGuest = guest;
+                
+                // 渲染详情内容
+                const detailContent = `
+                    <div class="space-y-4">
+                        <div class="border-b pb-4">
+                            <div class="flex items-center space-x-3 mb-2">
+                                <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold text-lg">
+                                    ${guest.get('name')?.charAt(0) || '客'}
+                                </div>
+                                <div>
+                                    <h4 class="text-lg font-semibold">${guest.get('name') || '未知'}</h4>
+                                    <p class="text-sm text-gray-500">${guest.get('roomNumber') || '未知'} | ${guest.get('roomType') || '未知'}</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <p class="text-sm text-gray-500">身份证号</p>
+                                <p class="font-medium">${guest.get('idCard') || '未填写'}</p>
+                            </div>
+                            <div>
+                                <p class="text-sm text-gray-500">联系电话</p>
+                                <p class="font-medium">${guest.get('phone') || '未填写'}</p>
+                            </div>
+                            <div>
+                                <p class="text-sm text-gray-500">入住时间</p>
+                                <p class="font-medium">${formatDate(guest.get('checkinTime'))}</p>
+                            </div>
+                            <div>
+                                <p class="text-sm text-gray-500">预计退房</p>
+                                <p class="font-medium">${formatDate(guest.get('expectedCheckoutTime'))}</p>
+                            </div>
+                            ${guest.get('checkoutTime') ? `
+                            <div>
+                                <p class="text-sm text-gray-500">实际退房</p>
+                                <p class="font-medium">${formatDate(guest.get('checkoutTime'))}</p>
+                            </div>
+                            ` : ''}
+                            <div>
+                                <p class="text-sm text-gray-500">支付方式</p>
+                                <p class="font-medium">${guest.get('paymentMethod') || '未填写'}</p>
+                            </div>
+                        </div>
+                        
+                        <div class="border-t pt-4 mt-4">
+                            <p class="text-sm text-gray-500 mb-2">费用明细</p>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <p class="text-sm text-gray-500">房费</p>
+                                    <p class="font-medium">¥${guest.get('roomFee') || 0}</p>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-500">押金</p>
+                                    <p class="font-medium">¥${guest.get('deposit') || 0}</p>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-500">其他消费</p>
+                                    <p class="font-medium">¥${guest.get('otherFee') || 0}</p>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-500">总费用</p>
+                                    <p class="font-medium text-orange-600">¥${guest.get('totalFee') || 0}</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="border-t pt-4 mt-4">
+                            <p class="text-sm text-gray-500 mb-2">备注</p>
+                            <p class="text-sm">${guest.get('remark') || '无'}</p>
+                        </div>
+                    </div>
+                `;
+                document.getElementById('guestDetailContent').innerHTML = detailContent;
+                
+                // 打开模态框
+                openModal('guestDetailModal');
+            } catch (error) {
+                console.error('加载客人详情失败:', error);
+                alert('加载客人详情失败，请重试');
+            }
+        }
+        
+        // 显示退房确认框
+        function showCheckoutModal() {
+            if (!currentGuest || currentGuest.get('checkoutTime')) {
+                alert('该客人已退房，无法操作');
+                closeModal('guestDetailModal');
+                return;
+            }
+            
+            // 计算费用（示例逻辑，可根据实际调整）
+            const checkinTime = new Date(currentGuest.get('checkinTime'));
+            const checkoutTime = new Date();
+            const days = Math.ceil((checkoutTime - checkinTime) / (1000 * 60 * 60 * 24));
+            const roomFee = (currentGuest.get('roomPrice') || 200) * days;
+            const otherFee = currentGuest.get('otherFee') || 0;
+            const totalFee = roomFee + otherFee;
+            const deposit = currentGuest.get('deposit') || 0;
+            const needPay = totalFee - deposit;
+            
+            // 渲染退房内容
+            const checkoutContent = `
+                <div>
+                    <p class="text-sm text-gray-500 mb-2">退房确认</p>
+                    <div class="space-y-3">
+                        <div class="flex justify-between">
+                            <span class="text-gray-700">客人姓名：</span>
+                            <span class="font-medium">${currentGuest.get('name') || '未知'}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-700">房间号：</span>
+                            <span class="font-medium">${currentGuest.get('roomNumber') || '未知'}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-700">入住时长：</span>
+                            <span class="font-medium">${days} 天</span>
+                        </div>
+                        <div class="border-t pt-2 mt-2">
+                            <div class="flex justify-between mb-1">
+                                <span class="text-gray-700">房费：</span>
+                                <span>¥${roomFee}</span>
+                            </div>
+                            <div class="flex justify-between mb-1">
+                                <span class="text-gray-700">其他消费：</span>
+                                <span>¥${otherFee}</span>
+                            </div>
+                            <div class="flex justify-between mb-1">
+                                <span class="text-gray-700">押金抵扣：</span>
+                                <span>¥${deposit}</span>
+                            </div>
+                            <div class="flex justify-between font-medium text-lg text-orange-600 mt-2">
+                                <span>需支付金额：</span>
+                                <span>¥${needPay >= 0 ? needPay : 0}</span>
+                            </div>
+                        </div>
+                        ${needPay < 0 ? `
+                        <div class="text-green-600 text-sm">
+                            需退还客人押金：¥${Math.abs(needPay)}
+                        </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+            document.getElementById('checkoutContent').innerHTML = checkoutContent;
+            
+            // 关闭详情框，打开退房框
+            closeModal('guestDetailModal');
+            openModal('checkoutModal');
+        }
+        
+        // 处理退房逻辑
+        async function processGuestCheckout() {
+            if (!currentGuest) return;
+            
+            try {
+                // 更新客人退房信息
+                currentGuest.set('checkoutTime', new Date());
+                currentGuest.set('status', '已退房');
+                
+                // 计算最终费用（示例）
+                const checkinTime = new Date(currentGuest.get('checkinTime'));
+                const checkoutTime = new Date();
+                const days = Math.ceil((checkoutTime - checkinTime) / (1000 * 60 * 60 * 24));
+                const roomFee = (currentGuest.get('roomPrice') || 200) * days;
+                const otherFee = currentGuest.get('otherFee') || 0;
+                const totalFee = roomFee + otherFee;
+                currentGuest.set('totalFee', totalFee);
+                
+                // 保存到LeanCloud
+                await currentGuest.save();
+                
+                // 更新房间状态（改为空闲）
+                const roomQuery = new AV.Query(Room);
+                roomQuery.equalTo('roomNumber', currentGuest.get('roomNumber'));
+                const room = await roomQuery.first();
+                if (room) {
+                    room.set('status', '空闲');
+                    await room.save();
+                }
+                
+                // 刷新数据
+                await loadAllGuests();
+                await loadCurrentGuests();
+                await loadGuestStatistics();
+                
+                // 关闭模态框并提示
+                closeModal('checkoutModal');
+                alert('退房成功！');
+            } catch (error) {
+                console.error('退房处理失败:', error);
+                alert('退房处理失败，请重试');
+            }
+        }
+        
+        // ========== 导出数据 ==========
+        function exportGuestData() {
+            // 简单导出CSV示例（可扩展）
+            try {
+                const headers = ['姓名', '身份证号', '电话', '房间号', '入住时间', '退房时间', '总费用'];
+                const rows = allGuests.map(guest => [
+                    guest.get('name') || '',
+                    guest.get('idCard') || '',
+                    guest.get('phone') || '',
+                    guest.get('roomNumber') || '',
+                    formatDate(guest.get('checkinTime')),
+                    formatDate(guest.get('checkoutTime')),
+                    guest.get('totalFee') || 0
+                ]);
+                
+                // 生成CSV内容
+                const csvContent = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
                 const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                
+                // 下载文件
                 const link = document.createElement('a');
                 const url = URL.createObjectURL(blob);
                 link.setAttribute('href', url);
-                link.setAttribute('download', `客人数据_${new Date().toISOString().split('T')[0]}.csv`);
+                link.setAttribute('download', `客人数据_${new Date().toLocaleDateString()}.csv`);
                 link.style.visibility = 'hidden';
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
             } catch (error) {
-                alert('导出数据失败：' + error.message);
+                console.error('导出数据失败:', error);
+                alert('导出数据失败，请重试');
             }
-        }
-        
-        function closeModal(modalId) {
-            document.getElementById(modalId).classList.remove('active');
-        }
-        
-        function calculateNights(checkin, checkout) {
-            const checkinDate = new Date(checkin);
-            const checkoutDate = new Date(checkout);
-            const diffTime = checkoutDate - checkinDate;
-            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-            return diffDays > 0 ? diffDays : 1;
         }
     </script>
 </body>
