@@ -327,7 +327,7 @@
                 
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">新房态</label>
-                    <select id="modalStatusSelect" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    <select id="modalRoomStatus" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                         <option value="vacant">可入住</option>
                         <option value="occupied">已入住</option>
                         <option value="cleaning">清扫中</option>
@@ -335,19 +335,14 @@
                     </select>
                 </div>
                 
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">备注</label>
-                    <textarea id="modalStatusNote" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="可选"></textarea>
+                <div class="pt-4 flex justify-end space-x-3">
+                    <button onclick="closeModal('roomStatusModal')" class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors">
+                        取消
+                    </button>
+                    <button onclick="saveRoomStatus()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                        确认修改
+                    </button>
                 </div>
-            </div>
-            
-            <div class="flex space-x-3 mt-6">
-                <button onclick="closeModal('roomStatusModal')" class="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">
-                    取消
-                </button>
-                <button onclick="updateRoomStatus()" class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-                    确认修改
-                </button>
             </div>
         </div>
     </div>
@@ -366,246 +361,347 @@
             
             <div class="space-y-4">
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">选择入住房间</label>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">选择房间</label>
                     <select id="checkoutRoomSelect" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                        <option value="">请选择已入住房间</option>
+                        <option value="">请选择房间</option>
                     </select>
                 </div>
                 
-                <div id="checkoutGuestInfo" class="hidden bg-gray-50 rounded-lg p-4">
-                    <h4 class="font-medium text-gray-900 mb-2">客人信息</h4>
-                    <div class="space-y-1 text-sm">
-                        <p><span class="text-gray-600">姓名:</span> <span id="checkoutGuestName"></span></p>
-                        <p><span class="text-gray-600">房型:</span> <span id="checkoutRoomType"></span></p>
-                        <p><span class="text-gray-600">入住日期:</span> <span id="checkoutCheckinDate"></span></p>
-                    </div>
+                <div class="pt-4 flex justify-end space-x-3">
+                    <button onclick="closeModal('quickCheckoutModal')" class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors">
+                        取消
+                    </button>
+                    <button onclick="confirmCheckout()" class="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors">
+                        确认退房
+                    </button>
                 </div>
-            </div>
-            
-            <div class="flex space-x-3 mt-6">
-                <button onclick="closeModal('quickCheckoutModal')" class="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">
-                    取消
-                </button>
-                <button onclick="processCheckout()" class="flex-1 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors">
-                    确认退房
-                </button>
             </div>
         </div>
     </div>
 
-    <script src="main.js"></script>
     <script>
-        // 页面特定的JavaScript代码
-        let rooms = [];
-        
-        // 初始化页面
-        document.addEventListener('DOMContentLoaded', async function() {
-            await initializeIndexPage();
-            await loadRoomsGrid();
-            await updateRoomStatistics();
-            await loadCharts();
-            await loadOverviewData();
+        // LeanCloud 初始化（请替换为你的实际 App ID 和 App Key）
+        AV.init({
+            appId: "YOUR_LEANCLOUD_APP_ID",
+            appKey: "YOUR_LEANCLOUD_APP_KEY",
+            serverURL: "https://your-server-url.api.lncldglobal.com"
         });
-        
-        async function initializeIndexPage() {
-            // 页面初始化逻辑
-        }
-        
-        async function loadRoomsGrid() {
-            const roomsGrid = document.getElementById('roomsGrid');
-            roomsGrid.innerHTML = '';
+
+        // 全局变量
+        let allRooms = [];
+        let roomStatusChart = null;
+        let roomTypeChart = null;
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            // 初始化时间显示
+            updateCurrentTime();
+            setInterval(updateCurrentTime, 1000);
             
-            try {
-                rooms = await getAllRooms();
-                
-                rooms.forEach(room => {
-                    const roomCard = document.createElement('div');
-                    roomCard.className = `room-card bg-white rounded-lg shadow-sm border-l-4 status-${room.status} p-3 cursor-pointer`;
-                    roomCard.onclick = () => showRoomDetail(room);
-                    
-                    roomCard.innerHTML = `
-                        <div class="flex items-center justify-between">
-                            <span class="text-lg font-bold text-gray-900">${room.number}</span>
-                            <div class="w-3 h-3 bg-${room.status} rounded-full"></div>
-                        </div>
-                        <div class="text-xs text-gray-600 mt-1">${room.type}</div>
-                        <div class="text-xs text-gray-500 mt-1">${getStatusText(room.status)}</div>
-                    `;
-                    
-                    roomsGrid.appendChild(roomCard);
-                });
-            } catch (error) {
-                console.error('加载房间列表失败:', error);
-            }
-        }
-        
-        async function updateRoomStatistics() {
-            try {
-                const rooms = await getAllRooms();
-                
-                const stats = {
-                    vacant: rooms.filter(r => r.status === 'vacant').length,
-                    occupied: rooms.filter(r => r.status === 'occupied').length,
-                    cleaning: rooms.filter(r => r.status === 'cleaning').length,
-                    maintenance: rooms.filter(r => r.status === 'maintenance').length
-                };
-                
-                document.getElementById('vacantCount').textContent = stats.vacant;
-                document.getElementById('occupiedCount').textContent = stats.occupied;
-                document.getElementById('cleaningCount').textContent = stats.cleaning;
-                document.getElementById('maintenanceCount').textContent = stats.maintenance;
-                
-                // 计算入住率
-                const occupancyRate = rooms.length > 0 ? 
-                    Math.round((stats.occupied / rooms.length) * 100) : 0;
-                document.getElementById('occupancyRate').textContent = occupancyRate + '%';
-            } catch (error) {
-                console.error('更新统计数据失败:', error);
-            }
-        }
-        
-        async function loadCharts() {
-            try {
-                await loadRoomStatusChart();
-                await loadRoomTypeChart();
-            } catch (error) {
-                console.error('加载图表失败:', error);
-            }
-        }
-        
-        async function loadRoomStatusChart() {
-            const chart = echarts.init(document.getElementById('roomStatusChart'));
-            const rooms = await getAllRooms();
+            // 初始化图表
+            initCharts();
             
-            const stats = {
-                vacant: rooms.filter(r => r.status === 'vacant').length,
-                occupied: rooms.filter(r => r.status === 'occupied').length,
-                cleaning: rooms.filter(r => r.status === 'cleaning').length,
-                maintenance: rooms.filter(r => r.status === 'maintenance').length
-            };
+            // 加载房间数据
+            loadRoomsData();
             
-            const option = {
-                tooltip: {
-                    trigger: 'item',
-                    formatter: '{b}: {c} ({d}%)'
-                },
-                series: [{
-                    type: 'pie',
-                    radius: '70%',
-                    center: ['50%', '50%'],
-                    data: [
-                        { value: stats.vacant, name: '可入住', itemStyle: { color: '#10b981' } },
-                        { value: stats.occupied, name: '已入住', itemStyle: { color: '#f59e0b' } },
-                        { value: stats.cleaning, name: '清扫中', itemStyle: { color: '#3b82f6' } },
-                        { value: stats.maintenance, name: '维修中', itemStyle: { color: '#ef4444' } }
-                    ],
-                    emphasis: {
-                        itemStyle: {
-                            shadowBlur: 10,
-                            shadowOffsetX: 0,
-                            shadowColor: 'rgba(0, 0, 0, 0.5)'
-                        }
-                    },
-                    itemStyle: {
-                        borderRadius: 8,
-                        borderColor: '#fff',
-                        borderWidth: 2
-                    }
-                }]
-            };
-            
-            chart.setOption(option);
+            // 加载统计数据
+            loadStatisticsData();
+        });
+
+        // 切换侧边栏
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('active');
         }
-        
-        async function loadRoomTypeChart() {
-            const chart = echarts.init(document.getElementById('roomTypeChart'));
-            const rooms = await getAllRooms();
+
+        // 刷新数据
+        function refreshData() {
+            loadRoomsData();
+            loadStatisticsData();
+            updateCharts();
+            alert('数据已刷新');
+        }
+
+        // 显示房态修改模态框
+        function showRoomStatusModal() {
+            // 加载房间列表到下拉框
+            const roomSelect = document.getElementById('modalRoomSelect');
+            roomSelect.innerHTML = '<option value="">请选择房间</option>';
             
-            const typeStats = {};
-            rooms.forEach(room => {
-                typeStats[room.type] = (typeStats[room.type] || 0) + 1;
+            allRooms.forEach(room => {
+                const option = document.createElement('option');
+                option.value = room.number;
+                option.textContent = `${room.number} (${getStatusText(room.status)})`;
+                roomSelect.appendChild(option);
             });
             
-            const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
-            const data = Object.entries(typeStats).map(([type, count], index) => ({
-                name: type,
-                value: count,
-                itemStyle: { color: colors[index % colors.length] }
-            }));
-            
-            const option = {
-                tooltip: {
-                    trigger: 'item',
-                    formatter: '{b}: {c} ({d}%)'
-                },
-                series: [{
-                    type: 'pie',
-                    radius: '70%',
-                    center: ['50%', '50%'],
-                    data: data,
-                    emphasis: {
-                        itemStyle: {
-                            shadowBlur: 10,
-                            shadowOffsetX: 0,
-                            shadowColor: 'rgba(0, 0, 0, 0.5)'
-                        }
-                    },
-                    itemStyle: {
-                        borderRadius: 8,
-                        borderColor: '#fff',
-                        borderWidth: 2
-                    }
-                }]
-            };
-            
-            chart.setOption(option);
+            document.getElementById('roomStatusModal').classList.add('active');
         }
-        
-        async function loadOverviewData() {
-            try {
-                const stats = await getGuestStatistics();
-                document.getElementById('todayCheckins').textContent = stats.todayCheckins;
-                document.getElementById('todayCheckouts').textContent = stats.todayCheckouts;
-            } catch (error) {
-                console.error('加载概览数据失败:', error);
-            }
-        }
-        
-        async function refreshData() {
-            await loadRoomsGrid();
-            await updateRoomStatistics();
-            await loadCharts();
-            await loadOverviewData();
-        }
-        
-        async function showRoomStatusModal() {
-            const modal = document.getElementById('roomStatusModal');
-            const select = document.getElementById('modalRoomSelect');
-            select.innerHTML = '<option value="">请选择房间</option>';
+
+        // 显示快速退房模态框
+        function showQuickCheckout() {
+            // 加载已入住房间到下拉框
+            const roomSelect = document.getElementById('checkoutRoomSelect');
+            roomSelect.innerHTML = '<option value="">请选择房间</option>';
             
-            try {
-                const rooms = await getAllRooms();
-                rooms.forEach(room => {
-                    const option = document.createElement('option');
-                    option.value = room.number;
-                    option.textContent = `${room.number} - ${room.type}`;
-                    select.appendChild(option);
-                });
-            } catch (error) {
-                console.error('加载房间列表失败:', error);
-            }
+            const occupiedRooms = allRooms.filter(room => room.status === 'occupied');
+            occupiedRooms.forEach(room => {
+                const option = document.createElement('option');
+                option.value = room.number;
+                option.textContent = room.number;
+                roomSelect.appendChild(option);
+            });
             
-            modal.classList.add('active');
+            document.getElementById('quickCheckoutModal').classList.add('active');
         }
-        
+
+        // 关闭模态框
         function closeModal(modalId) {
             document.getElementById(modalId).classList.remove('active');
         }
-        
-        async function updateRoomStatus() {
+
+        // 筛选房间
+        function filterRooms() {
+            const floorFilter = document.getElementById('floorFilter').value;
+            const statusFilter = document.getElementById('statusFilter').value;
+            
+            let filteredRooms = [...allRooms];
+            
+            // 楼层筛选
+            if (floorFilter) {
+                filteredRooms = filteredRooms.filter(room => {
+                    // 假设房间号格式为 101、202 等，第一位是楼层
+                    const floor = room.number.toString().charAt(0);
+                    return floor === floorFilter;
+                });
+            }
+            
+            // 状态筛选
+            if (statusFilter) {
+                filteredRooms = filteredRooms.filter(room => room.status === statusFilter);
+            }
+            
+            // 渲染筛选后的房间
+            renderRoomsGrid(filteredRooms);
+        }
+
+        // 加载房间数据
+        async function loadRoomsData() {
+            try {
+                // 从 LeanCloud 获取房间数据
+                const Room = AV.Object.extend('Room');
+                const query = new AV.Query(Room);
+                query.orderBy('number');
+                const results = await query.find();
+                
+                allRooms = results.map(room => ({
+                    id: room.id,
+                    number: room.get('number'),
+                    type: room.get('type') || '标准间',
+                    status: room.get('status') || 'vacant',
+                    floor: Math.floor(room.get('number') / 100) || 1
+                }));
+                
+                // 渲染房间网格
+                renderRoomsGrid(allRooms);
+                
+                // 更新房间选择下拉框（退房模态框）
+                updateCheckoutRoomSelect();
+                
+            } catch (error) {
+                console.error('加载房间数据失败:', error);
+                alert('加载房间数据失败，请重试');
+            }
+        }
+
+        // 渲染房间网格
+        function renderRoomsGrid(rooms) {
+            const roomsGrid = document.getElementById('roomsGrid');
+            roomsGrid.innerHTML = '';
+            
+            if (rooms.length === 0) {
+                roomsGrid.innerHTML = `
+                    <div class="col-span-full flex items-center justify-center py-8 text-gray-500">
+                        暂无符合条件的房间
+                    </div>
+                `;
+                return;
+            }
+            
+            rooms.forEach(room => {
+                const roomCard = document.createElement('div');
+                roomCard.className = `room-card rounded-lg p-3 text-center cursor-pointer status-${room.status}`;
+                roomCard.innerHTML = `
+                    <div class="text-lg font-semibold">${room.number}</div>
+                    <div class="text-xs mt-1 ${getBgClass(room.status)} px-2 py-1 rounded-full">
+                        ${getStatusText(room.status)}
+                    </div>
+                `;
+                
+                // 点击房间卡片可快速修改房态
+                roomCard.addEventListener('click', () => {
+                    document.getElementById('modalRoomSelect').value = room.number;
+                    document.getElementById('modalRoomStatus').value = room.status;
+                    showRoomStatusModal();
+                });
+                
+                roomsGrid.appendChild(roomCard);
+            });
+        }
+
+        // 加载统计数据
+        async function loadStatisticsData() {
+            try {
+                // 统计各状态房间数量
+                const vacantCount = allRooms.filter(room => room.status === 'vacant').length;
+                const occupiedCount = allRooms.filter(room => room.status === 'occupied').length;
+                const cleaningCount = allRooms.filter(room => room.status === 'cleaning').length;
+                const maintenanceCount = allRooms.filter(room => room.status === 'maintenance').length;
+                
+                // 更新统计卡片
+                document.getElementById('vacantCount').textContent = vacantCount;
+                document.getElementById('occupiedCount').textContent = occupiedCount;
+                document.getElementById('cleaningCount').textContent = cleaningCount;
+                document.getElementById('maintenanceCount').textContent = maintenanceCount;
+                
+                // 计算入住率
+                const totalRooms = allRooms.length;
+                const availableRooms = totalRooms - maintenanceCount;
+                const occupancyRate = availableRooms > 0 
+                    ? ((occupiedCount / availableRooms) * 100).toFixed(1) + '%' 
+                    : '0%';
+                
+                // 模拟今日入住/退房数据（实际项目中从订单/客人数据获取）
+                const todayCheckins = Math.floor(Math.random() * 10) + 1;
+                const todayCheckouts = Math.floor(Math.random() * 8) + 1;
+                
+                // 更新今日概览
+                document.getElementById('todayCheckins').textContent = todayCheckins;
+                document.getElementById('todayCheckouts').textContent = todayCheckouts;
+                document.getElementById('occupancyRate').textContent = occupancyRate;
+                
+                // 更新图表数据
+                updateCharts();
+                
+            } catch (error) {
+                console.error('加载统计数据失败:', error);
+            }
+        }
+
+        // 初始化图表
+        function initCharts() {
+            // 房态分布图表
+            roomStatusChart = echarts.init(document.getElementById('roomStatusChart'));
+            // 房型入住率图表
+            roomTypeChart = echarts.init(document.getElementById('roomTypeChart'));
+            
+            // 初始配置
+            updateCharts();
+        }
+
+        // 更新图表数据
+        function updateCharts() {
+            // 房态分布数据
+            const statusData = [
+                { name: '可入住', value: allRooms.filter(r => r.status === 'vacant').length },
+                { name: '已入住', value: allRooms.filter(r => r.status === 'occupied').length },
+                { name: '清扫中', value: allRooms.filter(r => r.status === 'cleaning').length },
+                { name: '维修中', value: allRooms.filter(r => r.status === 'maintenance').length }
+            ];
+            
+            // 房态分布图表配置
+            const statusOption = {
+                color: ['#10b981', '#f59e0b', '#3b82f6', '#ef4444'],
+                tooltip: {
+                    trigger: 'item'
+                },
+                legend: {
+                    orient: 'vertical',
+                    left: 'left'
+                },
+                series: [
+                    {
+                        name: '房态',
+                        type: 'pie',
+                        radius: ['40%', '70%'],
+                        data: statusData,
+                        label: {
+                            show: true,
+                            formatter: '{b}: {c} ({d}%)'
+                        }
+                    }
+                ]
+            };
+            
+            // 房型入住率数据（按房型分组）
+            const roomTypes = ['标准间', '大床房', '套房', '豪华套房'];
+            const typeData = roomTypes.map(type => {
+                const total = allRooms.filter(r => r.type === type).length;
+                const occupied = allRooms.filter(r => r.type === type && r.status === 'occupied').length;
+                const rate = total > 0 ? ((occupied / total) * 100).toFixed(1) : 0;
+                
+                return {
+                    name: type,
+                    value: parseFloat(rate)
+                };
+            });
+            
+            // 房型入住率图表配置
+            const typeOption = {
+                color: ['#3b82f6'],
+                tooltip: {
+                    trigger: 'axis',
+                    axisPointer: {
+                        type: 'shadow'
+                    }
+                },
+                grid: {
+                    left: '3%',
+                    right: '4%',
+                    bottom: '3%',
+                    containLabel: true
+                },
+                xAxis: [
+                    {
+                        type: 'category',
+                        data: roomTypes,
+                        axisTick: {
+                            alignWithLabel: true
+                        }
+                    }
+                ],
+                yAxis: [
+                    {
+                        type: 'value',
+                        max: 100,
+                        name: '入住率(%)'
+                    }
+                ],
+                series: [
+                    {
+                        name: '入住率',
+                        type: 'bar',
+                        barWidth: '60%',
+                        data: typeData
+                    }
+                ]
+            };
+            
+            // 更新图表
+            roomStatusChart.setOption(statusOption);
+            roomTypeChart.setOption(typeOption);
+            
+            // 响应窗口大小变化
+            window.addEventListener('resize', function() {
+                roomStatusChart.resize();
+                roomTypeChart.resize();
+            });
+        }
+
+        // 保存房态修改
+        async function saveRoomStatus() {
             const roomNumber = document.getElementById('modalRoomSelect').value;
-            const newStatus = document.getElementById('modalStatusSelect').value;
-            const note = document.getElementById('modalStatusNote').value;
+            const newStatus = document.getElementById('modalRoomStatus').value;
             
             if (!roomNumber) {
                 alert('请选择房间');
@@ -613,96 +709,161 @@
             }
             
             try {
-                await updateRoomStatus(roomNumber, newStatus, note);
-                closeModal('roomStatusModal');
-                await refreshData();
-                alert('房态修改成功！');
-            } catch (error) {
-                alert('房态修改失败：' + error.message);
-            }
-        }
-        
-        async function showQuickCheckout() {
-            const modal = document.getElementById('quickCheckoutModal');
-            const select = document.getElementById('checkoutRoomSelect');
-            select.innerHTML = '<option value="">请选择已入住房间</option>';
-            
-            try {
-                const guests = await getCurrentGuests();
-                const occupiedRooms = guests.filter(g => g.status === 'checked-in');
+                // 查找对应的房间对象
+                const Room = AV.Object.extend('Room');
+                const query = new AV.Query(Room);
+                query.equalTo('number', parseInt(roomNumber));
+                const room = await query.first();
                 
-                occupiedRooms.forEach(guest => {
-                    const option = document.createElement('option');
-                    option.value = guest.roomNumber;
-                    option.textContent = `${guest.roomNumber} - ${guest.guestName}`;
-                    option.setAttribute('data-guest-id', guest.id);
-                    select.appendChild(option);
-                });
+                if (!room) {
+                    alert('房间不存在');
+                    return;
+                }
+                
+                // 更新房态
+                room.set('status', newStatus);
+                await room.save();
+                
+                // 更新本地数据
+                const index = allRooms.findIndex(r => r.number === parseInt(roomNumber));
+                if (index !== -1) {
+                    allRooms[index].status = newStatus;
+                }
+                
+                // 刷新界面
+                loadRoomsData();
+                loadStatisticsData();
+                closeModal('roomStatusModal');
+                
+                alert('房态修改成功');
+                
             } catch (error) {
-                console.error('加载在住客人失败:', error);
+                console.error('修改房态失败:', error);
+                alert('修改房态失败，请重试');
             }
-            
-            modal.classList.add('active');
         }
-        
-        async function processCheckout() {
-            const select = document.getElementById('checkoutRoomSelect');
-            const selectedOption = select.selectedOptions[0];
-            const guestId = selectedOption.getAttribute('data-guest-id');
+
+        // 确认退房
+        async function confirmCheckout() {
+            const roomNumber = document.getElementById('checkoutRoomSelect').value;
             
-            if (!guestId) {
-                alert('请选择要退房的客人');
+            if (!roomNumber) {
+                alert('请选择房间');
                 return;
             }
             
-            if (confirm('确认办理退房？')) {
-                try {
-                    await processCheckout(guestId);
-                    closeModal('quickCheckoutModal');
-                    await refreshData();
-                    alert('退房办理成功！');
-                } catch (error) {
-                    alert('退房失败：' + error.message);
+            if (!confirm(`确认要为 ${roomNumber} 房间办理退房吗？`)) {
+                return;
+            }
+            
+            try {
+                // 1. 更新房间状态为清扫中
+                const Room = AV.Object.extend('Room');
+                const roomQuery = new AV.Query(Room);
+                roomQuery.equalTo('number', parseInt(roomNumber));
+                const room = await roomQuery.first();
+                
+                if (!room) {
+                    alert('房间不存在');
+                    return;
                 }
+                
+                room.set('status', 'cleaning');
+                await room.save();
+                
+                // 2. 处理客人退房逻辑（更新客人状态）
+                const Guest = AV.Object.extend('Guest');
+                const guestQuery = new AV.Query(Guest);
+                guestQuery.equalTo('roomNumber', parseInt(roomNumber));
+                guestQuery.equalTo('status', 'checkin');
+                const guest = await guestQuery.first();
+                
+                if (guest) {
+                    guest.set('status', 'checkout');
+                    guest.set('checkoutTime', new Date());
+                    await guest.save();
+                }
+                
+                // 3. 更新本地数据并刷新界面
+                const index = allRooms.findIndex(r => r.number === parseInt(roomNumber));
+                if (index !== -1) {
+                    allRooms[index].status = 'cleaning';
+                }
+                
+                loadRoomsData();
+                loadStatisticsData();
+                closeModal('quickCheckoutModal');
+                
+                alert('退房办理成功，房间状态已改为清扫中');
+                
+            } catch (error) {
+                console.error('退房失败:', error);
+                alert('退房失败，请重试');
             }
         }
-        
-        function filterRooms() {
-            const floorFilter = document.getElementById('floorFilter').value;
-            const statusFilter = document.getElementById('statusFilter').value;
+
+        // 更新退房房间选择框
+        function updateCheckoutRoomSelect() {
+            const roomSelect = document.getElementById('checkoutRoomSelect');
+            if (!roomSelect) return;
             
-            const roomCards = document.querySelectorAll('.room-card');
+            roomSelect.innerHTML = '<option value="">请选择房间</option>';
             
-            roomCards.forEach(card => {
-                const roomNumber = card.querySelector('.text-lg').textContent;
-                const status = card.className.match(/status-(\w+)/)[1];
-                
-                let show = true;
-                
-                if (floorFilter && roomNumber.charAt(0) !== floorFilter) {
-                    show = false;
-                }
-                
-                if (statusFilter && status !== statusFilter) {
-                    show = false;
-                }
-                
-                card.style.display = show ? 'block' : 'none';
+            const occupiedRooms = allRooms.filter(room => room.status === 'occupied');
+            occupiedRooms.forEach(room => {
+                const option = document.createElement('option');
+                option.value = room.number;
+                option.textContent = room.number;
+                roomSelect.appendChild(option);
             });
         }
-        
+
+        // 辅助函数：获取状态文本
         function getStatusText(status) {
             const statusMap = {
-                'vacant': '可入住',
-                'occupied': '已入住',
-                'cleaning': '清扫中',
-                'maintenance': '维修中'
+                vacant: '可入住',
+                occupied: '已入住',
+                cleaning: '清扫中',
+                maintenance: '维修中'
             };
             return statusMap[status] || status;
         }
-        
-        function showRoomDetail(room) {
-            alert(`房间详情页面开发中...\n房间号: ${room.number}\n状态: ${getStatusText(room.status)}`);
+
+        // 辅助函数：获取背景样式类
+        function getBgClass(status) {
+            const bgMap = {
+                vacant: 'bg-vacant',
+                occupied: 'bg-occupied',
+                cleaning: 'bg-cleaning',
+                maintenance: 'bg-maintenance'
+            };
+            return bgMap[status] || '';
+        }
+
+        // 更新当前时间
+        function updateCurrentTime() {
+            const now = new Date();
+            const timeStr = now.toLocaleString('zh-CN', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            document.getElementById('currentTime').textContent = timeStr;
+        }
+
+        // 计算入住天数（复用已有逻辑）
+        function calculateNights(checkinDate, checkoutDate) {
+            if (!checkinDate || !checkoutDate) return 0;
+            
+            const start = new Date(checkinDate);
+            const end = new Date(checkoutDate);
+            const diffTime = Math.abs(end - start);
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            
+            return diffDays;
         }
     </script>
 </body>
